@@ -1,4 +1,3 @@
-const SVG_NS = 'http://www.w3.org/2000/svg'
 
 const $ = (path, parent = document) => parent.querySelector(path);
 const $$ = (path, parent = document) => parent.querySelectorAll(path)
@@ -7,6 +6,7 @@ function main() {
   const canvas = $('#canvas');
   const board = new Board();
   const view = new BoardView(canvas, board);
+  const ai = new BruteForceStrategy(board, 3);
 
   let [px, py] = [-1, -1]
   let flippable = null;
@@ -21,6 +21,11 @@ function main() {
   function updateScore() {
     $(`#info .player-b .score`).innerHTML = board.score['b'];
     $(`#info .player-w .score`).innerHTML = board.score['w'];
+  }
+
+  function updatePlayer() {
+    $$(`#info .player`).forEach(e => e.classList.remove('current'));
+    $(`#info .player-${board.nextPiece}`).classList.add('current');
   }
 
   function handlePreview(e) {
@@ -58,6 +63,7 @@ function main() {
     board.reset();
     view.repaint();
     updateScore();
+    updatePlayer();
   }
 
   canvas.addEventListener('click', handleFlip)
@@ -73,9 +79,8 @@ function main() {
     flippable = null;
   })
 
-  board.on('turnChange', nextPiece => {
-    $$(`#info .player`).forEach(e => e.classList.remove('current'));
-    $(`#info .player-${nextPiece}`).classList.add('current');
+  board.on('turnChange', () => {
+    updatePlayer()
   })
 
   board.on('set', () => {
@@ -93,12 +98,11 @@ function main() {
       if (board.score['b'] == board.score['w']) {
         alert('Draw!')
       }
-      newGame();
-    }, 300)
+    }, 200)
   })
 
   $('#controls .pass').addEventListener('click', e => {
-    const flippables = board.search()
+    const flippables = ai.analyze()
     if (flippables.length > 0) {
       alert(`Don't pass yet! You can flip here!`)
       view.clearUI();
@@ -116,6 +120,7 @@ function main() {
     if (board.undoable()) {
       board.undo();
       [px, py] = [-1, -1];
+      view.clearUI();
     } else {
       alert('Nothing to undo!')
     }
@@ -142,17 +147,25 @@ class EventEmitter {
 
 class Board extends EventEmitter {
   constructor() {
-    super()
-    this.width = 8;
-    this.height = 8;
-    this.grid = [];
-    this.pieces = ['b', 'w']
+    super();
     this.reset();
   }
+  get width() { return 8 }
+  get height() { return 8 }
+  get pieces() { return 'bw' }
   get nextPiece() {
     return this.pieces[this.turn];
   }
+  copy() {
+    const board = new Board();
+    board.grid = this.grid.map(row => row.slice());
+    board.score = { ...this.score };
+    board.turn = this.turn;
+    board.passCount = this.passCount;
+    return board;
+  }
   reset() {
+    this.grid = [];
     for (let y = 0; y < this.height; y++) {
       this.grid[y] = [];
       for (let x = 0; x < this.width; x++) {
@@ -167,12 +180,12 @@ class Board extends EventEmitter {
     this.turn = 0
     this.passCount = 0
     this.undoStack = []
-    this.emit('turnChange', this.nextPiece)
   }
   search() {
-    const candidates = new Map()
     const dir = [[-1,-1], [0,-1], [1,-1], [-1,0], [1,0], [-1,1], [0,1], [1,1]];
+    const candidates = new Map()
 
+    // look for empty cells next to the opponent's pieces
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         if (!this.isEmpty(x, y) && this.grid[y][x] !== this.nextPiece) {
@@ -191,6 +204,7 @@ class Board extends EventEmitter {
       .map(([ x, y ]) => this.getFlippable(x, y))
       .filter(f => f.length > 0)
   }
+  deepSearch(level = 1) {}
   undo() {
     if (!this.undoable()) return
     const undoable = this.undoStack.pop();
@@ -216,7 +230,7 @@ class Board extends EventEmitter {
   }
   nextTurn() {
     this.turn = (this.turn + 1) % 2;
-    this.emit('turnChange', this.nextPiece)
+    this.emit('turnChange')
   }
   set(x, y) {
     const piece = this.nextPiece
@@ -281,6 +295,8 @@ class Board extends EventEmitter {
     return flippable
   }
 }
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
 
 class BoardView {
   constructor(canvas, board) {
@@ -448,9 +464,8 @@ class TouchManager extends EventEmitter {
     })
 
     canvas.addEventListener('touchmove', e => {
-      // console.log('touchmove', e.changedTouches[0])
       this.emit(e.type, e.changedTouches[0])
-    })
+    }, { passive: true })
 
     canvas.addEventListener('touchend', e => {
       console.log('touchend', e.changedTouches[0])
@@ -464,6 +479,55 @@ class TouchManager extends EventEmitter {
         this.emit(e.type, e.changedTouches[0])
       }
     })
+  }
+}
+
+class BruteForceStrategy {
+  constructor(board, maxDepth = 1) {
+    this.board = board;
+    this.maxDepth = maxDepth;
+    this.weights = [
+      [10,1,5,5,5,5,1,10],
+      [1,1,1,1,1,1,1,1],
+      [5,1,1,1,1,1,1,5],
+      [5,1,1,1,1,1,1,5],
+      [5,1,1,1,1,1,1,5],
+      [5,1,1,1,1,1,1,5],
+      [1,1,1,1,1,1,1,1],
+      [10,1,5,5,5,5,1,10],
+    ];
+  }
+  analyze() {
+    const candidates = this.analyzeRecursive(1, this.board.copy())
+    return candidates
+      .sort((a, b) => b.score - a.score)
+      .map(f => f.flippable)
+  }
+  analyzeRecursive(depth, board) {
+    const label = `analyze[${depth}/${this.maxDepth}]`;
+    console.group(label);
+    const candidates = board.search().map(f => {
+      const score = (this.weights[f.y][f.x] + f.length) * (depth % 2 === 0 ? -1 : 1)
+      return { score, flippable: f }
+    })
+    candidates.forEach(f => {
+      const { x, y } = f.flippable;
+      if (depth < this.maxDepth) {
+        f.flippable.flip();
+        const nextCandidates = this.analyzeRecursive(depth + 1, board);
+        if (nextCandidates.length > 0) {
+          nextCandidates.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+          const oldScore = f.score;
+          f.score += nextCandidates[0].score;
+          console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
+        }
+        board.undo();
+      } else {
+        console.debug(`(%d, %d) = %d`, x, y, f.score);
+      }
+    })
+    console.groupEnd(label);
+    return candidates
   }
 }
 
