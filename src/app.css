@@ -52,6 +52,10 @@ body {
   font-weight: 600;
   font-style: italic;
 }
+#info .current::before {
+  font-style: normal;
+  content: '\1F914';
+}
 .player-b, .player-w {
   margin: 1rem 0;
   text-align: center;

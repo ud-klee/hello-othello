@@ -2,11 +2,12 @@
 const $ = (path, parent = document) => parent.querySelector(path);
 const $$ = (path, parent = document) => parent.querySelectorAll(path)
 
+const BOT_LEVEL = 4;  // 1 (easy) - 4 (hard)
+
 function main() {
   const canvas = $('#canvas');
   const board = new Board(sessionStorage.getItem('board'));
   const view = new BoardView(canvas, board);
-  const ai = new BruteForceStrategy(board, 2);
 
   let [px, py] = [-1, -1]
   let flippable = null;
@@ -29,6 +30,8 @@ function main() {
   }
 
   function handlePreview(e) {
+    if (board.nextPiece !== 'b') return
+
     const [x, y] = getCursorXY(e);
     if (x == px && y == py) return;
     [px, py] = [x, y];
@@ -52,6 +55,7 @@ function main() {
   }
 
   function handleFlip(e) {
+    if (board.nextPiece !== 'b') return
     if (flippable && flippable.length > 0) {
       view.clearUI();
       flippable.flip()
@@ -59,12 +63,16 @@ function main() {
     }
   }
 
-  function newGame() {
-    board.reset();
+  function refreshUI() {
     view.clearUI();
     view.repaint();
     updateScore();
     updatePlayer();
+  }
+
+  function newGame() {
+    board.reset();
+    refreshUI();
   }
 
   canvas.oncontextmenu = () => false
@@ -99,16 +107,16 @@ function main() {
   })
 
   $('#controls .pass').addEventListener('click', e => {
-    console.time('analyze')
-    const flippables = ai.analyze()
-    console.timeEnd('analyze')
-    if (flippables.length > 0) {
-      alert(`Don't pass yet! You can flip here!`)
-      view.clearUI();
-      view.previewFlippable(flippables[0])
-    } else {
-      board.pass();
-    }
+    const finder = new BruteForceFinder(board, 2);
+    finder.analyze().then(flippables => {
+      if (flippables.length > 0) {
+        alert(`Don't pass yet! You can flip here!`)
+        view.clearUI();
+        view.previewFlippable(flippables[0])
+      } else {
+        board.pass();
+      }
+    })
   })
 
   $('#controls .new').addEventListener('click', e => {
@@ -119,6 +127,7 @@ function main() {
 
   $('#controls .undo').addEventListener('click', e => {
     if (board.undoable()) {
+      board.undo();
       board.undo();
       [px, py] = [-1, -1];
       view.clearUI();
@@ -131,10 +140,19 @@ function main() {
     sessionStorage.setItem('board', board.serialize());
   })
 
-  view.repaint();
-  updateScore();
-  updatePlayer();
+  refreshUI();
   // console.debug(board)
+
+  const bot = new Bot(board, 'w', new BruteForceFinder(board, BOT_LEVEL));
+  bot.on('thinkstart', () => {
+    view.setCursorStyle('progress');
+    $$('#controls button').forEach(e => e.disabled = true);
+  });
+  bot.on('thinkend', () => {
+    view.setCursorStyle('auto');
+    $$('#controls button').forEach(e => e.disabled = false);
+  });
+  bot.play();
 }
 
 class EventEmitter {
@@ -227,21 +245,19 @@ class Board extends EventEmitter {
       .map(([ x, y ]) => this.getFlippable(x, y))
       .filter(f => f.length > 0)
   }
-  deepSearch(level = 1) {}
   undo() {
     if (!this.undoable()) return
     const undoable = this.undoStack.pop();
     undoable.undo();
+    console.debug(`Board: undo - undoable=${this.undoStack.length}`)
   }
   undoable() {
     return this.undoStack.length > 0
   }
   pass() {
+    if (this.passCount >= 2) return;
+
     this.passCount++;
-    if (this.passCount == 2) {
-      this.emit('end')
-      return
-    }
     this.nextTurn();
 
     const undo = () => {
@@ -250,6 +266,10 @@ class Board extends EventEmitter {
     }
 
     this.undoStack.push({ undo })
+
+    if (this.passCount == 2) {
+      this.emit('end')
+    }
   }
   nextTurn() {
     this.turn = (this.turn + 1) % 2;
@@ -261,13 +281,11 @@ class Board extends EventEmitter {
     this.score[piece]++;
     this.passCount = 0
     this.emit('set', { x, y, piece });
+    this.nextTurn();
 
     if (this.score['b'] + this.score['w'] == 64) {
       this.emit('end')
-      return
     }
-
-    this.nextTurn();
   }
   unset(x, y) {
     const piece = this.grid[y][x];
@@ -474,7 +492,7 @@ class Flippable {
   }
 }
 
-class BruteForceStrategy {
+class BruteForceFinder {
   constructor(board, maxDepth = 1) {
     this.board = board;
     this.maxDepth = maxDepth;
@@ -490,18 +508,23 @@ class BruteForceStrategy {
       [10,1,5,5,5,5,1,10],
     ];
   }
-  analyze() {
+  async analyze() {
     this.searchCount = 0;
-    const candidates = this.analyzeRecursive(1, this.board.copy())
+    console.time('analyze')
+    const candidates = await this._analyzeRecursive(1, this.board.copy())
+    console.timeEnd('analyze')
     console.debug(`searchCount`, this.searchCount);
     const best = candidates.reduce((a, b) => Math.max(a.score, b.score), -Infinity);
     // keep the best ones and shuffle
     return candidates
       .filter(f => f.score !== best)
       .sort(() => Math.random() - 0.5)
-      .map(f => f.flippable)
+      .map(f => {
+        f.flippable.board = this.board
+        return f.flippable
+      })
   }
-  analyzeRecursive(depth, board) {
+  async _analyzeRecursive(depth, board) {
     this.searchCount++;
     const candidates = board.search().map(f => {
       // score is negated at alternating depths
@@ -512,12 +535,12 @@ class BruteForceStrategy {
     console.group(label);
     // stop early if there is only one candidate
     if (candidates.length > 1) {
-      candidates.forEach(f => {
+      for (const f of candidates) {
         const { x, y } = f.flippable;
         // flip and analyze the next move
         if (depth < this.maxDepth) {
           f.flippable.flip();
-          const nextCandidates = this.analyzeRecursive(depth + 1, board);
+          const nextCandidates = await this._analyzeRecursive(depth + 1, board);
           if (nextCandidates.length > 0) {
             // sort by absolute score to find the next best move
             nextCandidates.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
@@ -526,13 +549,58 @@ class BruteForceStrategy {
             console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
           }
           board.undo();
+          await this.sleep(0);
         } else {
           console.debug(`(%d, %d) = %d`, x, y, f.score);
         }
-      })
+      }
     }
     console.groupEnd(label);
     return candidates
+  }
+  async sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+}
+
+class Bot extends EventEmitter {
+  constructor(board, piece, finder) {
+    super();
+    this.board = board;
+    this.piece = piece;
+    this.finder = finder;
+    this.timer = 0;
+  }
+  play() {
+    const logStyle = 'color: yellow; font-size: 0.8rem;'
+
+    this.board.on('turnChange', () => {
+      if (this.board.nextPiece === this.piece) {
+        this.timer = setTimeout(() => {
+          console.info(`%cBot: thinking...`, logStyle);
+          this.emit('thinkstart');
+          this.finder.analyze().then(flippables => {
+            this.emit('thinkend');
+            if (flippables.length > 0) {
+              const { x, y } = flippables[0];
+              console.info('%cBot: playing (%d, %d)', logStyle, x, y);
+              flippables[0].flip();
+            } else {
+              console.info('%cBot: pass :(', logStyle);
+              this.board.pass();
+            }
+          })
+        }, 300)
+      } else {
+        console.info(`%cBot: your turn`, logStyle);
+        clearTimeout(this.timer)
+      }
+    })
+
+    this.board.on('end', () => {
+      console.info(`%cBot: good game :)`, logStyle);
+      clearTimeout(this.timer)
+    })
   }
 }
 
