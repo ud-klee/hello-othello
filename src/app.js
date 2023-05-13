@@ -6,7 +6,7 @@ function main() {
   const canvas = $('#canvas');
   const board = new Board();
   const view = new BoardView(canvas, board);
-  const ai = new BruteForceStrategy(board, 3);
+  const ai = new BruteForceStrategy(board, 2);
 
   let [px, py] = [-1, -1]
   let flippable = null;
@@ -94,11 +94,13 @@ function main() {
       if (board.score['b'] == board.score['w']) {
         alert('Draw!')
       }
-    }, 200)
+    }, 300)
   })
 
   $('#controls .pass').addEventListener('click', e => {
+    console.time('analyze')
     const flippables = ai.analyze()
+    console.timeEnd('analyze')
     if (flippables.length > 0) {
       alert(`Don't pass yet! You can flip here!`)
       view.clearUI();
@@ -451,6 +453,7 @@ class BruteForceStrategy {
   constructor(board, maxDepth = 1) {
     this.board = board;
     this.maxDepth = maxDepth;
+    this.searchCount = 0;
     this.weights = [
       [10,1,5,5,5,5,1,10],
       [1,1,1,1,1,1,1,1],
@@ -463,34 +466,46 @@ class BruteForceStrategy {
     ];
   }
   analyze() {
+    this.searchCount = 0;
     const candidates = this.analyzeRecursive(1, this.board.copy())
+    console.debug(`searchCount`, this.searchCount);
+    const best = candidates.reduce((a, b) => Math.max(a.score, b.score), -Infinity);
+    // keep the best ones and shuffle
     return candidates
-      .sort((a, b) => b.score - a.score)
+      .filter(f => f.score !== best)
+      .sort(() => Math.random() - 0.5)
       .map(f => f.flippable)
   }
   analyzeRecursive(depth, board) {
-    const label = `analyze[${depth}/${this.maxDepth}]`;
-    console.group(label);
+    this.searchCount++;
     const candidates = board.search().map(f => {
+      // score is negated at alternating depths
       const score = (this.weights[f.y][f.x] + f.length) * (depth % 2 === 0 ? -1 : 1)
       return { score, flippable: f }
     })
-    candidates.forEach(f => {
-      const { x, y } = f.flippable;
-      if (depth < this.maxDepth) {
-        f.flippable.flip();
-        const nextCandidates = this.analyzeRecursive(depth + 1, board);
-        if (nextCandidates.length > 0) {
-          nextCandidates.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
-          const oldScore = f.score;
-          f.score += nextCandidates[0].score;
-          console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
+    const label = `analyze[${depth}/${this.maxDepth}]: candidates=${candidates.length}`;
+    console.group(label);
+    // stop early if there is only one candidate
+    if (candidates.length > 1) {
+      candidates.forEach(f => {
+        const { x, y } = f.flippable;
+        // flip and analyze the next move
+        if (depth < this.maxDepth) {
+          f.flippable.flip();
+          const nextCandidates = this.analyzeRecursive(depth + 1, board);
+          if (nextCandidates.length > 0) {
+            // sort by absolute score to find the next best move
+            nextCandidates.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+            const oldScore = f.score;
+            f.score += nextCandidates[0].score;
+            console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
+          }
+          board.undo();
+        } else {
+          console.debug(`(%d, %d) = %d`, x, y, f.score);
         }
-        board.undo();
-      } else {
-        console.debug(`(%d, %d) = %d`, x, y, f.score);
-      }
-    })
+      })
+    }
     console.groupEnd(label);
     return candidates
   }
