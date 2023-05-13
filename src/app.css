@@ -25,6 +25,7 @@ body {
   border: 1px solid #666;
   border-radius: 1rem;
   background-color: bisque;
+  user-select: none;
 }
 @media screen and (min-width: 768px) {
   #info {
@@ -71,7 +72,6 @@ body {
 #canvas {
   border: 3px solid black;
   background-color: forestgreen;
-  cursor: pointer;
   touch-action: none;
 }
 .grid-line {

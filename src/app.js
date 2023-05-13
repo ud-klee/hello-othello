@@ -40,7 +40,7 @@ function main() {
       view.setCursorStyle('not-allowed');
       return
     }
-    view.setCursorStyle('pointer');
+    view.setCursorStyle('auto');
 
     flippable = board.getFlippable(x, y);
     if (flippable.length == 0) {
@@ -66,15 +66,11 @@ function main() {
     updatePlayer();
   }
 
-  canvas.addEventListener('click', handleFlip)
-  canvas.addEventListener('mousemove', handlePreview)
-
-  const tm = new TouchManager(canvas);
-
-  tm.on('touchstart', handlePreview)
-  tm.on('touchmove', handlePreview)
-  tm.on('touchend', handleFlip)
-  tm.on('touchcancel', () => {
+  canvas.oncontextmenu = () => false
+  canvas.addEventListener('pointerup', handleFlip)
+  canvas.addEventListener('pointermove', handlePreview)
+  canvas.addEventListener('pointerdown', handlePreview)
+  canvas.addEventListener('pointercancel', () => {
     view.clearUI();
     flippable = null;
   })
@@ -127,7 +123,7 @@ function main() {
   })
 
   view.repaint();
-  console.log(board)
+  console.debug(board)
 }
 
 class EventEmitter {
@@ -448,37 +444,6 @@ class Flippable {
     this.forEach(([x, y]) => this.board.flip(x, y));
     this.board.unset(this.x, this.y);
     this.board.nextTurn();
-  }
-}
-
-class TouchManager extends EventEmitter {
-  constructor(canvas) {
-    super();
-
-    canvas.addEventListener('touchstart', e => {
-      if (e.cancelable) {
-        e.preventDefault();
-        console.log('touchstart', e.changedTouches[0])
-        this.emit(e.type, e.changedTouches[0])
-      }
-    })
-
-    canvas.addEventListener('touchmove', e => {
-      this.emit(e.type, e.changedTouches[0])
-    }, { passive: true })
-
-    canvas.addEventListener('touchend', e => {
-      console.log('touchend', e.changedTouches[0])
-      this.emit(e.type, e.changedTouches[0])
-    })
-
-    canvas.addEventListener('touchcancel', e => {
-      if (e.cancelable) {
-        e.preventDefault();
-        console.log('touchcancel', e.changedTouches[0])
-        this.emit(e.type, e.changedTouches[0])
-      }
-    })
   }
 }
 
