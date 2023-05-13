@@ -4,7 +4,7 @@ const $$ = (path, parent = document) => parent.querySelectorAll(path)
 
 function main() {
   const canvas = $('#canvas');
-  const board = new Board();
+  const board = new Board(sessionStorage.getItem('board'));
   const view = new BoardView(canvas, board);
   const ai = new BruteForceStrategy(board, 2);
 
@@ -61,6 +61,7 @@ function main() {
 
   function newGame() {
     board.reset();
+    view.clearUI();
     view.repaint();
     updateScore();
     updatePlayer();
@@ -111,7 +112,9 @@ function main() {
   })
 
   $('#controls .new').addEventListener('click', e => {
-    newGame();
+    if (confirm('Start a new game?')) {
+      newGame();
+    }
   })
 
   $('#controls .undo').addEventListener('click', e => {
@@ -124,8 +127,14 @@ function main() {
     }
   })
 
+  window.addEventListener('visibilitychange', () => {
+    sessionStorage.setItem('board', board.serialize());
+  })
+
   view.repaint();
-  console.debug(board)
+  updateScore();
+  updatePlayer();
+  // console.debug(board)
 }
 
 class EventEmitter {
@@ -144,15 +153,31 @@ class EventEmitter {
 }
 
 class Board extends EventEmitter {
-  constructor() {
+  constructor(json) {
     super();
     this.reset();
+    if (json) this.restore(json);
   }
   get width() { return 8 }
   get height() { return 8 }
   get pieces() { return 'bw' }
   get nextPiece() {
     return this.pieces[this.turn];
+  }
+  serialize() {
+    return JSON.stringify({
+      grid: this.grid,
+      score: this.score,
+      turn: this.turn,
+      passCount: this.passCount,
+    })
+  }
+  restore(json) {
+    const data = JSON.parse(json);
+    this.grid = data.grid;
+    this.score = data.score;
+    this.turn = data.turn;
+    this.passCount = data.passCount;
   }
   copy() {
     const board = new Board();
