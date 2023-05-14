@@ -26,6 +26,9 @@ class Board extends EventEmitter {
   get nextPiece() {
     return this.pieces[this.turn];
   }
+  get totalScore() {
+    return this.score['b'] + this.score['w'];
+  }
   serialize() {
     return JSON.stringify({
       grid: this.grid,
@@ -127,7 +130,7 @@ class Board extends EventEmitter {
     this.emit('set', { x, y, piece });
     this.nextTurn();
 
-    if (this.score['b'] + this.score['w'] == 64) {
+    if (this.totalScore == 64) {
       this.emit('end')
     }
   }
@@ -336,7 +339,7 @@ class Flippable {
 
 class BruteForceFinder {
   constructor() {
-    this.worker = new Worker('./brute-force-worker.js')
+    this.worker = new Worker('./brute-force-worker.js?v=0399267d')
   }
   async analyze(board, maxDepth = 1) {
     return new Promise((resolve) => {

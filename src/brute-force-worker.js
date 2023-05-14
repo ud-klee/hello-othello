@@ -1,14 +1,25 @@
 importScripts('./lib.js')
 
-const Weights = [
-  [10,1,5,5,5,5,1,10],
-  [1,1,1,1,1,1,1,1],
-  [5,1,1,1,1,1,1,5],
-  [5,1,1,1,1,1,1,5],
-  [5,1,1,1,1,1,1,5],
-  [5,1,1,1,1,1,1,5],
-  [1,1,1,1,1,1,1,1],
-  [10,1,5,5,5,5,1,10],
+const OpenWeights = [
+  [10,-2,5,5,5,5,-2,10],
+  [-2,-2,1,1,1,1,-2,-2],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [-2,-2,1,1,1,1,-2,-2],
+  [10,-2,5,5,5,5,-2,10],
+];
+
+const MidGameWeights = [
+  [ 5,-1,3,3,3,3,-1, 5],
+  [-1,-1,1,1,1,1,-1,-1],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [-1,-1,1,1,1,1,-1,-1],
+  [ 5,-1,3,3,3,3,-1, 5],
 ];
 
 self.onmessage = function (e) {
@@ -27,10 +38,18 @@ function analyze(board, maxDepth = 1) {
   const candidates = _analyzeRecursive(board, maxDepth)
   console.timeEnd('analyze')
   console.debug(`searchCount`, searchCount);
-  const best = candidates.reduce((a, b) => Math.max(a.score, b.score), -Infinity);
+  const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
+  console.debug(`best`, best);
+  console.debug(`candidates`, candidates.map(({ score, flippable }) => {
+    const { x, y } = flippable
+    return {
+      move: [ x, y ],
+      score,
+    }
+  }))
   // keep the best ones and shuffle
   return candidates
-    .filter(f => f.score !== best)
+    .filter(f => f.score === best)
     .sort(() => Math.random() - 0.5)
     .map(f => {
       return f.flippable
@@ -39,9 +58,15 @@ function analyze(board, maxDepth = 1) {
 
 function _analyzeRecursive(board, maxDepth, depth = 1) {
   searchCount++;
+  let weights;
+  if (board.totalScore <= 32) {
+    weights = OpenWeights;
+  } else {
+    weights = MidGameWeights;
+  }
   const candidates = board.search().map(f => {
     // score is negated at alternating depths
-    const score = (Weights[f.y][f.x] + f.length) * (depth % 2 === 0 ? -1 : 1)
+    const score = (weights[f.y][f.x] + f.length) * (depth % 2 === 0 ? -1 : 1)
     return { score, flippable: f }
   })
   const label = `analyze[${depth}/${maxDepth}]: candidates=${candidates.length}`;
