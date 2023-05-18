@@ -2,7 +2,7 @@
 const $ = (path, parent = document) => parent.querySelector(path);
 const $$ = (path, parent = document) => parent.querySelectorAll(path)
 
-const BOT_LEVEL = 4;  // 1 (easy) - 4 (hard)
+const BOT_LEVEL = 3;  // 1 (easy) - 4 (hard)
 
 function main() {
   const canvas = $('#canvas');

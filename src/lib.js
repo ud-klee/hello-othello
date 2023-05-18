@@ -96,7 +96,7 @@ class Board extends EventEmitter {
     if (!this.undoable()) return
     const undoable = this.undoStack.pop();
     undoable.undo();
-    console.debug(`Board: undo - undoable=${this.undoStack.length}`)
+    // console.debug(`Board: undo - undoable=${this.undoStack.length}`)
   }
   undoable() {
     return this.undoStack.length > 0
@@ -339,13 +339,14 @@ class Flippable {
 
 class BruteForceFinder {
   constructor() {
-    this.worker = new Worker('./brute-force-worker.js?v=0399267d')
+    this.worker = new Worker('./brute-force-worker.js?v=d13459bf')
   }
   async analyze(board, maxDepth = 1) {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
         const result = []
-        for (const { x, y, flippables } of e.data) {
+        console.log(`gameTree`, e.data.tree)
+        for (const { x, y, flippables } of e.data.result) {
           const flippable = new Flippable(board, x, y);
           flippable.add(...flippables);
           result.push(flippable);
@@ -375,7 +376,16 @@ class Bot extends EventEmitter {
         this.timer = setTimeout(() => {
           console.info(`%cBot: thinking...`, logStyle);
           this.emit('thinkstart');
-          this.finder.analyze(this.board, this.level).then(flippables => {
+          // adaptively adjust the search depth
+          let level = this.level;
+          if (this.board.totalScore < 8) {
+            level -= 1;
+          } else if (this.board.totalScore < 16) {
+            // nop
+          } else {
+            level += 1;
+          }
+          this.finder.analyze(this.board, Math.max(1, level)).then(flippables => {
             this.emit('thinkend');
             if (flippables.length > 0) {
               const { x, y } = flippables[0];
