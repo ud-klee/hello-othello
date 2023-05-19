@@ -46,8 +46,7 @@ function analyze(board, maxDepth = 1, root) {
   console.debug(`candidates`, candidates.map(({ score, flippable }) => {
     const { x, y } = flippable
     return {
-      move: [ x, y ],
-      score,
+      x, y, score,
     }
   }))
   // keep the best ones and shuffle
@@ -68,35 +67,45 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
     weights = MidGameWeights;
   }
   const candidates = board.search().map(f => {
-    // score is negated at alternating depths
-    const score = (weights[f.y][f.x] + f.length) * (depth % 2 === 0 ? -1 : 1)
-    return { score, flippable: f }
+    const score = weights[f.y][f.x] + f.length
+    return {
+      score,
+      flippable: f,
+      finalize(best, worst) {
+        if (best < 0 && worst < 0) {
+          this.score = Math.min(best, worst);
+        } else if (best > 0 && worst > 0) {
+          this.score =  Math.max(best, worst);
+        } else {
+          this.score =  best + worst;
+        }
+      },
+    }
   })
-  const best = candidates.reduce((score, c) => Math.max(score, Math.abs(c.score)), -Infinity);
+  // const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
   // const label = `analyze[${depth}/${maxDepth}]: c=${candidates.length} b=${best}`;
-  node.scores = candidates.map(({ score }) => score);
-  node.best = best;
+  node.gains = candidates.map(({ score }) => score);
+  // node.best = best;
   node.children = []
   // console.group(label);
-  // ignore other options if we got the corner
-  if (best >= 20) {
-    console.debug(`got the corner, stop searching deeper`);
-    candidates.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
-    candidates.length = 1;
-  }
-  for (const f of candidates) {
-    const { x, y } = f.flippable;
+  for (const cand of candidates) {
+    const { x, y } = cand.flippable;
     // flip and analyze the next move
     if (depth < maxDepth) {
-      f.flippable.flip();
+      cand.flippable.flip();
       const child = {};
-      const nextCandidates = _analyzeRecursive(board, maxDepth, child, depth + 1);
+      let nextCandidates = _analyzeRecursive(board, maxDepth, child, depth + 1);
       node.children.push(child);
       if (nextCandidates.length > 0) {
-        // sort by absolute score to find the next best move
-        nextCandidates.sort((a, b) => Math.abs(b.score) - Math.abs(a.score));
+        nextCandidates.forEach(c => {
+          c.score = cand.score - c.score;
+        })
+        nextCandidates.sort((a, b) => b.score - a.score);
+        child.best = nextCandidates[0].score;
+        child.worst = nextCandidates[nextCandidates.length - 1].score;
+        cand.finalize(child.best, child.worst);
         // const oldScore = f.score;
-        f.score += nextCandidates[0].score;
+        // f.score += nextCandidates[0].score;
         // console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
       }
       board.undo();
@@ -104,7 +113,7 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
       // console.debug(`(%d, %d) = %d`, x, y, f.score);
     }
   }
-  node.adjusted = candidates.map(({ score }) => score);
+  node.scores = candidates.map(({ score }) => score);
   // console.groupEnd(label);
   return candidates
 }

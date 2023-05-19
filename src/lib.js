@@ -339,7 +339,7 @@ class Flippable {
 
 class BruteForceFinder {
   constructor() {
-    this.worker = new Worker('./brute-force-worker.js?v=d13459bf')
+    this.worker = new Worker('./brute-force-worker.js?v=c8887370')
   }
   async analyze(board, maxDepth = 1) {
     return new Promise((resolve) => {
