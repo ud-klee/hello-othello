@@ -101,3 +101,8 @@ body {
   fill: red;
   stroke: red;
 }
+#auto {
+  font-size: 1rem;
+  font-style: normal;
+  font-weight: normal;
+}

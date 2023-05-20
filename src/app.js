@@ -2,7 +2,7 @@
 const $ = (path, parent = document) => parent.querySelector(path);
 const $$ = (path, parent = document) => parent.querySelectorAll(path)
 
-const BOT_LEVEL = 3;  // 1 (easy) - 4 (hard)
+const BOT_LEVEL = 4;  // 1 (fast) - 4 (slower)
 
 function main() {
   const canvas = $('#canvas');
@@ -74,6 +74,7 @@ function main() {
   function newGame() {
     board.reset();
     refreshUI();
+    $('#auto input').checked = false;
   }
 
   canvas.oncontextmenu = () => false
@@ -136,6 +137,14 @@ function main() {
     }
   })
 
+  $('#auto input').addEventListener('change', e => {
+    if (e.target.checked) {
+      blackBot.wakeup();
+    } else {
+      blackBot.sleep();
+    }
+  })
+
   window.addEventListener('visibilitychange', () => {
     sessionStorage.setItem('board', board.serialize());
   })
@@ -143,16 +152,21 @@ function main() {
   refreshUI();
   // console.debug(board)
 
-  const bot = new Bot(board, 'w', finder, BOT_LEVEL);
-  bot.on('thinkstart', () => {
-    view.setCursorStyle('progress');
-    $$('#controls button').forEach(e => e.disabled = true);
-  });
-  bot.on('thinkend', () => {
-    view.setCursorStyle('auto');
-    $$('#controls button').forEach(e => e.disabled = false);
-  });
-  bot.play();
+  function botThinking(t) {
+    view.setCursorStyle(t ? 'progress' : 'auto');
+    $$('#controls button').forEach(e => e.disabled = t);
+  }
+
+  const whiteBot = new Bot(board, 'w', finder, BOT_LEVEL);
+  whiteBot.on('thinkstart', () => botThinking(true));
+  whiteBot.on('thinkend', () => botThinking(false));
+  whiteBot.play();
+
+  const blackBot = new Bot(board, 'b', finder, BOT_LEVEL - 1);
+  blackBot.on('thinkstart', () => botThinking(true));
+  blackBot.on('thinkend', () => botThinking(false));
+  blackBot.play();
+  blackBot.sleep();
 }
 
 document.addEventListener('DOMContentLoaded', main);

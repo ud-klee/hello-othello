@@ -339,13 +339,13 @@ class Flippable {
 
 class BruteForceFinder {
   constructor() {
-    this.worker = new Worker('./brute-force-worker.js?v=c8887370')
+    this.worker = new Worker('./brute-force-worker.js?v=583e403b')
   }
   async analyze(board, maxDepth = 1) {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
         const result = []
-        console.log(`gameTree`, e.data.tree)
+        console.debug(`gameTree`, e.data.tree)
         for (const { x, y, flippables } of e.data.result) {
           const flippable = new Flippable(board, x, y);
           flippable.add(...flippables);
@@ -367,44 +367,64 @@ class Bot extends EventEmitter {
     this.finder = finder;
     this.level = level;
     this.timer = 0;
+    this.sleeping = false;
+  }
+  get name() {
+    return `Bot(${this.piece})`
+  }
+  say(msg, ...args) {
+    const style = 'color: yellow; font-size: 0.8rem;'
+    console.info(`%c%s: ${msg}`, style, this.name, ...args)
+  }
+  sleep() {
+    this.sleeping = true;
+  }
+  wakeup() {
+    this.sleeping = false;
+    if (this.board.nextPiece === this.piece) {
+      this._play();
+    }
+  }
+  _play() {
+    this.say(`thinking...`);
+    this.emit('thinkstart');
+    // adaptively adjust the search depth
+    let level = this.level;
+    if (this.board.totalScore < 8) {
+      level -= 1;
+    } else if (this.board.totalScore < 16) {
+      // nop
+    } else {
+      level += 1;
+    }
+    this.finder.analyze(this.board, Math.max(1, level)).then(flippables => {
+      this.emit('thinkend');
+      if (flippables.length > 0) {
+        const { x, y } = flippables[0];
+        this.say(`playing (%d, %d)`, x, y);
+        flippables[0].flip();
+      } else {
+        this.say(`pass :(`);
+        this.board.pass();
+      }
+    })
   }
   play() {
-    const logStyle = 'color: yellow; font-size: 0.8rem;'
-
     this.board.on('turnChange', () => {
+      if (this.sleeping) return;
       if (this.board.nextPiece === this.piece) {
         this.timer = setTimeout(() => {
-          console.info(`%cBot: thinking...`, logStyle);
-          this.emit('thinkstart');
-          // adaptively adjust the search depth
-          let level = this.level;
-          if (this.board.totalScore < 8) {
-            level -= 1;
-          } else if (this.board.totalScore < 16) {
-            // nop
-          } else {
-            level += 1;
-          }
-          this.finder.analyze(this.board, Math.max(1, level)).then(flippables => {
-            this.emit('thinkend');
-            if (flippables.length > 0) {
-              const { x, y } = flippables[0];
-              console.info('%cBot: playing (%d, %d)', logStyle, x, y);
-              flippables[0].flip();
-            } else {
-              console.info('%cBot: pass :(', logStyle);
-              this.board.pass();
-            }
-          })
+          this._play();
         }, 300)
       } else {
-        console.info(`%cBot: your turn`, logStyle);
+        this.say(`your turn`);
         clearTimeout(this.timer)
       }
     })
 
     this.board.on('end', () => {
-      console.info(`%cBot: good game :)`, logStyle);
+      if (this.sleeping) return;
+      this.say(`good game :)`);
       clearTimeout(this.timer)
     })
   }
