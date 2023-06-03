@@ -435,14 +435,14 @@ const OpenWeights = [
 ];
 
 const MidGameWeights = [
-  [ 5, 0,3,3,3,3, 0, 5],
+  [ 9, 0,3,3,3,3, 0, 9],
   [ 0,-2,1,1,1,1,-2, 0],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 0,-2,1,1,1,1,-2, 0],
-  [ 5, 0,3,3,3,3, 0, 5],
+  [ 9, 0,3,3,3,3, 0, 9],
 ];
 
 let searchCount;
@@ -500,7 +500,6 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
   node.children = []
   // console.group(label);
   for (const cand of candidates) {
-    const { x, y } = cand.flippable;
     // flip and analyze the next move
     if (depth < maxDepth) {
       cand.flippable.flip();
@@ -515,13 +514,15 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
         child.best = nextCandidates[0].score;
         child.worst = nextCandidates[nextCandidates.length - 1].score;
         cand.finalize(child.best, child.worst);
-        // const oldScore = f.score;
-        // f.score += nextCandidates[0].score;
-        // console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
+      } else {
+        // if opponent has no move, we get an advantage
+        // we favor such moves over anything else
+        cand.score += 100;
       }
       board.undo();
     } else {
-      // console.debug(`(%d, %d) = %d`, x, y, f.score);
+      // const { x, y } = cand.flippable;
+      // console.debug(`(%d, %d) = %d`, x, y, cand.score);
     }
   }
   node.scores = candidates.map(({ score }) => score);

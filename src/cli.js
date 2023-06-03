@@ -2,7 +2,7 @@ import fs from 'fs'
 import { Board, Flippable, analyze } from './othello.js'
 
 const searchDepth = {
-  'b': 2,
+  'b': 3,
   'w': 4,
 }
 
@@ -20,16 +20,6 @@ function main() {
 
   board.on('end', () => {
     ended = true;
-    console.info(`Score`, board.score);
-    if (board.score['b'] > board.score['w']) {
-      console.info('Black wins!')
-    }
-    if (board.score['b'] < board.score['w']) {
-      console.info('White wins!')
-    }
-    if (board.score['b'] == board.score['w']) {
-      console.info('Draw!')
-    }
   });
 
   const history = []
@@ -77,7 +67,9 @@ function main() {
       const encoding = encodeBoard(board);
       trainingData.push([encoding, [x, y], board.turn]);
       flippable.flip();
-      printBoard(board, x, y);
+      if (replay) {
+        printBoard(board, x, y);
+      }
       history.push([x, y]);
     } else {
       console.info(`Turn ${turn}: ${board.nextPiece} passes`);
@@ -88,18 +80,41 @@ function main() {
     turn++;
   }
 
+  const score = board.score;
+  let result = 'draw';
+  if (score.b > score.w) {
+    result = 'lose';
+  }
+  if (score.w > score.b) {
+    result = 'win';
+  }
+
+  if (result === 'lose') {
+    console.info('Black wins! Score:', score)
+  }
+  if (result === 'win') {
+    console.info('White wins! Score:', score)
+  }
+  if (result === 'draw') {
+    console.info('Draw! Score:', score)
+  }
+
   if (!replay) {
-    const now = Date.now();
-    const score = board.score;
-    let result = 'draw';
-    if (score.b > score.w) {
-      result = 'lose';
+    let retry = 5;
+    while (retry > 0) {
+      const now = Date.now();
+      const dedup = Math.round(Math.random() * 1000);
+      const filename = `${now}_${score.b}v${score.w}_${dedup}.json`;
+      if (!fs.existsSync(`games/${filename}`)) {
+        fs.writeFileSync(`games/${filename}`, JSON.stringify(history));
+        fs.writeFileSync(`training/${result}/${filename}`, JSON.stringify(trainingData));
+        break;
+      }
+      retry--;
+      if (retry == 0) {
+        console.error(`Failed to save game ${filename} after 5 retries`);
+      }
     }
-    if (score.w > score.b) {
-      result = 'win';
-    }
-    fs.writeFileSync(`games/${now}_${score.b}v${score.w}.json`, JSON.stringify(history));
-    fs.writeFileSync(`training/${result}/${now}_${score.b}v${score.w}.json`, JSON.stringify(trainingData));
   }
 }
 
