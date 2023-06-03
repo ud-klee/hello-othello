@@ -3,14 +3,22 @@
   "version": "1.0.0",
   "description": "",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "serve -l 3000 src",
+    "dev": "serve -l 3000 dist",
+    "build": "rollup -c && cp -ruv public/* dist/",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "rollup": "^3.23.0",
     "serve": "^14.2.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.1.0",
+    "@rollup/plugin-terser": "^0.4.3",
+    "rollup-plugin-polyfill-node": "^0.12.0"
   }
 }

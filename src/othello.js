@@ -1,20 +1,9 @@
+import EventEmitter from 'events';
 
-class EventEmitter {
-  constructor() {
-    this._listeners = {};
-  }
-  emit(event, ...args) {
-    if (this._listeners[event]) {
-      this._listeners[event].forEach(fn => fn(...args));
-    }
-  }
-  on(event, fn) {
-    if (!this._listeners[event]) this._listeners[event] = [];
-    this._listeners[event].push(fn);
-  }
-}
+export const $ = (path, parent = document) => parent.querySelector(path);
+export const $$ = (path, parent = document) => parent.querySelectorAll(path);
 
-class Board extends EventEmitter {
+export class Board extends EventEmitter {
   constructor(json) {
     super();
     this.reset();
@@ -184,7 +173,7 @@ class Board extends EventEmitter {
   }
 }
 
-class BoardView {
+export class BoardView {
   constructor(canvas, board) {
     this.canvas = canvas;
     this.board = board;
@@ -309,7 +298,7 @@ class BoardView {
   }
 }
 
-class Flippable {
+export class Flippable {
   constructor(board, x, y) {
     this.board = board;
     this.x = x;
@@ -337,9 +326,9 @@ class Flippable {
   }
 }
 
-class BruteForceFinder {
-  constructor() {
-    this.worker = new Worker('./brute-force-worker.js?v=583e403b')
+export class BruteForceFinder {
+  constructor(path) {
+    this.worker = new Worker(path)
   }
   async analyze(board, maxDepth = 1) {
     return new Promise((resolve) => {
@@ -359,7 +348,7 @@ class BruteForceFinder {
   }
 }
 
-class Bot extends EventEmitter {
+export class Bot extends EventEmitter {
   constructor(board, piece, finder, level) {
     super();
     this.board = board;
@@ -409,13 +398,13 @@ class Bot extends EventEmitter {
       }
     })
   }
-  play() {
+  play(responseTime = 300) {
     this.board.on('turnChange', () => {
       if (this.sleeping) return;
       if (this.board.nextPiece === this.piece) {
         this.timer = setTimeout(() => {
           this._play();
-        }, 300)
+        }, responseTime)
       } else {
         this.say(`your turn`);
         clearTimeout(this.timer)
@@ -428,4 +417,111 @@ class Bot extends EventEmitter {
       clearTimeout(this.timer)
     })
   }
+}
+
+const OpenWeights = [
+  [20,-2,5,5,5,5,-2,20],
+  [-2,-2,1,1,1,1,-2,-2],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [ 5, 1,1,1,1,1, 1, 5],
+  [-2,-2,1,1,1,1,-2,-2],
+  [20,-2,5,5,5,5,-2,20],
+];
+
+const MidGameWeights = [
+  [ 5,-1,3,3,3,3,-1, 5],
+  [-1,-1,1,1,1,1,-1,-1],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [ 3, 1,1,1,1,1, 1, 3],
+  [-1,-1,1,1,1,1,-1,-1],
+  [ 5,-1,3,3,3,3,-1, 5],
+];
+
+let searchCount;
+
+export function analyze(board, maxDepth = 1, root) {
+  searchCount = 0;
+  console.time('analyze')
+  const candidates = _analyzeRecursive(board, maxDepth, root)
+  console.timeEnd('analyze')
+  console.debug(`searchCount`, searchCount);
+  const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
+  console.debug(`best`, best);
+  console.debug(`candidates`, candidates.map(({ score, flippable }) => {
+    const { x, y } = flippable
+    return {
+      x, y, score,
+    }
+  }))
+  // keep the best ones and shuffle
+  return candidates
+    .filter(f => f.score === best)
+    .sort(() => Math.random() - 0.5)
+    .map(f => {
+      return f.flippable
+    })
+}
+
+function _analyzeRecursive(board, maxDepth, node, depth = 1) {
+  searchCount++;
+  let weights;
+  if (board.totalScore <= 32) {
+    weights = OpenWeights;
+  } else {
+    weights = MidGameWeights;
+  }
+  const candidates = board.search().map(f => {
+    const score = weights[f.y][f.x] + f.length
+    return {
+      score,
+      flippable: f,
+      finalize(best, worst) {
+        if (best < 0 && worst < 0) {
+          this.score = Math.min(best, worst);
+        } else if (best > 0 && worst > 0) {
+          this.score =  Math.max(best, worst);
+        } else {
+          this.score =  best + worst;
+        }
+      },
+    }
+  })
+  // const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
+  // const label = `analyze[${depth}/${maxDepth}]: c=${candidates.length} b=${best}`;
+  node.gains = candidates.map(({ score }) => score);
+  // node.best = best;
+  node.children = []
+  // console.group(label);
+  for (const cand of candidates) {
+    const { x, y } = cand.flippable;
+    // flip and analyze the next move
+    if (depth < maxDepth) {
+      cand.flippable.flip();
+      const child = {};
+      let nextCandidates = _analyzeRecursive(board, maxDepth, child, depth + 1);
+      node.children.push(child);
+      if (nextCandidates.length > 0) {
+        nextCandidates.forEach(c => {
+          c.score = cand.score - c.score;
+        })
+        nextCandidates.sort((a, b) => b.score - a.score);
+        child.best = nextCandidates[0].score;
+        child.worst = nextCandidates[nextCandidates.length - 1].score;
+        cand.finalize(child.best, child.worst);
+        // const oldScore = f.score;
+        // f.score += nextCandidates[0].score;
+        // console.debug(`(%d, %d) = %d -> %d`, x, y, oldScore, f.score);
+      }
+      board.undo();
+    } else {
+      // console.debug(`(%d, %d) = %d`, x, y, f.score);
+    }
+  }
+  node.scores = candidates.map(({ score }) => score);
+  // console.groupEnd(label);
+  return candidates
 }

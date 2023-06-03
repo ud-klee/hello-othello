@@ -1,14 +1,14 @@
+import * as othello from './othello';
 
-const $ = (path, parent = document) => parent.querySelector(path);
-const $$ = (path, parent = document) => parent.querySelectorAll(path)
+const { $, $$ } = othello;
 
 const BOT_LEVEL = 4;  // 1 (fast) - 4 (slower)
 
 function main() {
   const canvas = $('#canvas');
-  const board = new Board(sessionStorage.getItem('board'));
-  const view = new BoardView(canvas, board);
-  const finder = new BruteForceFinder();
+  const board = new othello.Board(sessionStorage.getItem('board'));
+  const view = new othello.BoardView(canvas, board);
+  const finder = new othello.BruteForceFinder('./worker.min.js?v=895f2efa');
 
   let [px, py] = [-1, -1]
   let flippable = null;
@@ -157,12 +157,12 @@ function main() {
     $$('#controls button').forEach(e => e.disabled = t);
   }
 
-  const whiteBot = new Bot(board, 'w', finder, BOT_LEVEL);
+  const whiteBot = new othello.Bot(board, 'w', finder, BOT_LEVEL);
   whiteBot.on('thinkstart', () => botThinking(true));
   whiteBot.on('thinkend', () => botThinking(false));
   whiteBot.play();
 
-  const blackBot = new Bot(board, 'b', finder, BOT_LEVEL - 1);
+  const blackBot = new othello.Bot(board, 'b', finder, BOT_LEVEL - 1);
   blackBot.on('thinkstart', () => botThinking(true));
   blackBot.on('thinkend', () => botThinking(false));
   blackBot.play();
