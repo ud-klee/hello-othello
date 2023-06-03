@@ -1,4 +1,4 @@
-import * as othello from './othello';
+import * as othello from './othello.js';
 
 const { $, $$ } = othello;
 
@@ -75,6 +75,7 @@ function main() {
     board.reset();
     refreshUI();
     $('#auto input').checked = false;
+    blackBot.sleep();
   }
 
   canvas.oncontextmenu = () => false

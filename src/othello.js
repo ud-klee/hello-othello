@@ -94,7 +94,9 @@ export class Board extends EventEmitter {
     if (this.passCount >= 2) return;
 
     this.passCount++;
-    this.nextTurn();
+
+    const ended = this.passCount == 2;
+    this.nextTurn(ended);
 
     const undo = () => {
       this.passCount = 0;
@@ -103,13 +105,13 @@ export class Board extends EventEmitter {
 
     this.undoStack.push({ undo })
 
-    if (this.passCount == 2) {
+    if (ended) {
       this.emit('end')
     }
   }
-  nextTurn() {
+  nextTurn(ended = false) {
     this.turn = (this.turn + 1) % 2;
-    this.emit('turnChange')
+    this.emit('turnChange', ended)
   }
   set(x, y) {
     const piece = this.nextPiece
@@ -117,9 +119,11 @@ export class Board extends EventEmitter {
     this.score[piece]++;
     this.passCount = 0
     this.emit('set', { x, y, piece });
-    this.nextTurn();
 
-    if (this.totalScore == 64) {
+    const ended = this.totalScore == 64
+    this.nextTurn(ended);
+
+    if (ended) {
       this.emit('end')
     }
   }
@@ -299,11 +303,11 @@ export class BoardView {
 }
 
 export class Flippable {
-  constructor(board, x, y) {
+  constructor(board, x, y, flippables = []) {
     this.board = board;
     this.x = x;
     this.y = y;
-    this.flippables = []
+    this.flippables = flippables;
   }
   get length() {
     return this.flippables.length;
@@ -334,7 +338,7 @@ export class BruteForceFinder {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
         const result = []
-        console.debug(`gameTree`, e.data.tree)
+        // console.debug(`gameTree`, e.data.tree)
         for (const { x, y, flippables } of e.data.result) {
           const flippable = new Flippable(board, x, y);
           flippable.add(...flippables);
@@ -399,8 +403,8 @@ export class Bot extends EventEmitter {
     })
   }
   play(responseTime = 300) {
-    this.board.on('turnChange', () => {
-      if (this.sleeping) return;
+    this.board.on('turnChange', ended => {
+      if (ended || this.sleeping) return;
       if (this.board.nextPiece === this.piece) {
         this.timer = setTimeout(() => {
           this._play();
@@ -421,42 +425,41 @@ export class Bot extends EventEmitter {
 
 const OpenWeights = [
   [20,-2,5,5,5,5,-2,20],
-  [-2,-2,1,1,1,1,-2,-2],
+  [-2,-5,1,1,1,1,-5,-2],
   [ 5, 1,1,1,1,1, 1, 5],
   [ 5, 1,1,1,1,1, 1, 5],
   [ 5, 1,1,1,1,1, 1, 5],
   [ 5, 1,1,1,1,1, 1, 5],
-  [-2,-2,1,1,1,1,-2,-2],
+  [-2,-5,1,1,1,1,-5,-2],
   [20,-2,5,5,5,5,-2,20],
 ];
 
 const MidGameWeights = [
-  [ 5,-1,3,3,3,3,-1, 5],
-  [-1,-1,1,1,1,1,-1,-1],
+  [ 5, 0,3,3,3,3, 0, 5],
+  [ 0,-2,1,1,1,1,-2, 0],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 3, 1,1,1,1,1, 1, 3],
   [ 3, 1,1,1,1,1, 1, 3],
-  [-1,-1,1,1,1,1,-1,-1],
-  [ 5,-1,3,3,3,3,-1, 5],
+  [ 0,-2,1,1,1,1,-2, 0],
+  [ 5, 0,3,3,3,3, 0, 5],
 ];
 
 let searchCount;
 
-export function analyze(board, maxDepth = 1, root) {
+export function analyze(board, maxDepth = 1, root = {}) {
   searchCount = 0;
-  console.time('analyze')
+  // console.time('analyze')
   const candidates = _analyzeRecursive(board, maxDepth, root)
-  console.timeEnd('analyze')
-  console.debug(`searchCount`, searchCount);
+  // console.timeEnd('analyze')
   const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
-  console.debug(`best`, best);
-  console.debug(`candidates`, candidates.map(({ score, flippable }) => {
-    const { x, y } = flippable
-    return {
-      x, y, score,
-    }
-  }))
+  // console.debug(`searchCount / best`, searchCount, best);
+  // console.debug(`candidates`, candidates.map(({ score, flippable }) => {
+  //   const { x, y } = flippable
+  //   return {
+  //     x, y, score,
+  //   }
+  // }))
   // keep the best ones and shuffle
   return candidates
     .filter(f => f.score === best)

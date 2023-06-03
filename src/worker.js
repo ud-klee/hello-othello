@@ -1,4 +1,4 @@
-import { Board, analyze } from './othello';
+import { Board, analyze } from './othello.js';
 
 globalThis.onmessage = function (e) {
   const { board, maxDepth } = e.data
