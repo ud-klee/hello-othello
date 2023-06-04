@@ -2,120 +2,76 @@ import fs from 'fs'
 import { Board, Flippable, analyze } from './othello.js'
 
 const searchDepth = {
-  'b': 3,
+  'b': 4,
   'w': 4,
 }
 
 function main() {
   const board = new Board();
-  let ended = false;
-  let turn = 1;
-
-  const [,,file] = process.argv;
+  const [,, file] = process.argv;
   let replay = null;
 
   if (file) {
     replay = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
 
-  board.on('end', () => {
-    ended = true;
-  });
-
   const history = []
   const trainingData = []
 
-  while (!ended) {
-    let flippable = null;
-
-    if (replay) {
-      const nextMove = replay.shift();
-
-      if (nextMove === undefined) {
-        console.warn(`No more moves in replay file`);
-        return;
-      }
-
-      if (nextMove !== null) {
-        const [ x, y ] = nextMove;
-        flippable = board.getFlippable(x, y);
-
-        if (flippable.length === 0) {
-          console.warn(`Invalid move: ${nextMove}`);
-          return;
-        }
-      } else {
-        const candidates = board.search()
-
-        if (candidates.length > 0) {
-          console.warn(`Invalid move: pass`);
-          return;
-        }
-      }
-
-    } else {
+  function *bot() {
+    while (true) {
       const result = analyze(board.copy(), searchDepth[board.nextPiece]);
       if (result.length > 0) {
-        const { x, y, flippables } = result[0];
-        flippable = new Flippable(board, x, y, flippables)
+        const { x, y } = result[0];
+        yield [x, y];
+      } else {
+        yield null;
       }
     }
-
-    if (flippable) {
-      const { x, y } = flippable;
-      console.info(`Turn ${turn}: ${board.nextPiece} plays (${x}, ${y})`);
-      const encoding = encodeBoard(board);
-      trainingData.push([encoding, [x, y], board.turn]);
-      flippable.flip();
-      if (replay) {
-        printBoard(board, x, y);
-      }
-      history.push([x, y]);
-    } else {
-      console.info(`Turn ${turn}: ${board.nextPiece} passes`);
-      board.pass();
-      history.push(null);
-    }
-
-    turn++;
   }
 
-  const score = board.score;
-  let result = 'draw';
-  if (score.b > score.w) {
-    result = 'lose';
-  }
-  if (score.w > score.b) {
-    result = 'win';
-  }
+  function onEnd(result) {
+    let subdir = 'draw'
 
-  if (result === 'lose') {
-    console.info('Black wins! Score:', score)
-  }
-  if (result === 'win') {
-    console.info('White wins! Score:', score)
-  }
-  if (result === 'draw') {
-    console.info('Draw! Score:', score)
-  }
+    if (result == 0) { subdir = 'lose' }
+    if (result == 1) { subdir = 'win' }
 
-  if (!replay) {
-    let retry = 5;
-    while (retry > 0) {
+    if (!replay) {
       const now = Date.now();
       const dedup = Math.round(Math.random() * 1000);
-      const filename = `${now}_${score.b}v${score.w}_${dedup}.json`;
+      const filename = `${now}_${board.score.b}v${board.score.w}_${dedup}.json`;
       if (!fs.existsSync(`games/${filename}`)) {
         fs.writeFileSync(`games/${filename}`, JSON.stringify(history));
-        fs.writeFileSync(`training/${result}/${filename}`, JSON.stringify(trainingData));
-        break;
+        fs.writeFileSync(`training/${subdir}/${filename}`, JSON.stringify(trainingData));
+      } else {
+        throw new Error('Failed to save results: file already exists')
       }
-      retry--;
-      if (retry == 0) {
-        console.error(`Failed to save game ${filename} after 5 retries`);
-      }
+    }  
+  }
+
+  function onBeforeMove(move, who) {
+    if (move != null) {
+      const encoding = encodeBoard(board);
+      trainingData.push([encoding, move, who]);
     }
   }
+
+  function onAfterMove(move) {
+    history.push(move);
+  }
+
+  function print(str) {
+    console.info(str)
+  }
+
+  board.replay({
+    source: replay ? replay.values() : bot(),
+    printBoard: !!replay,
+    print,
+    onEnd,
+    onBeforeMove,
+    onAfterMove,
+  });
 }
 
 function encodeBoard(board) {
@@ -135,38 +91,6 @@ function encodeBoard(board) {
     encoding.push(blackBits << 8 | whiteBits);
   }
   return encoding
-}
-
-function printBoard(board, mx, my) {
-  console.info('┌' + '─'.repeat(board.width * 2 + 1) + '┐');
-  for (let y = 0; y < board.height; y++) {
-    let row = '│';
-    // let blackBits = 0;
-    // let whiteBits = 0;
-    for (let x = 0; x < board.width; x++) {
-      const piece = board.grid[y][x];
-      if (mx === x && my === y) {
-        row += '▸';
-      } else {
-        row += ' ';
-      }
-      if (piece == 'b') {
-        row += '●';
-        // blackBits |= 1 << (7 - x);
-      }
-      if (piece == 'w') {
-        row += '○';
-        // whiteBits |= 1 << (7 - x);
-      }
-      if (!piece) {
-        row += '‧';
-      }
-    }
-    // const bits = Buffer.from([blackBits, whiteBits]).toString('hex');
-    // console.info('%s %s', row + ' │', bits.padStart(4, '0'));
-    console.info(row + ' │');
-  }
-  console.info('└' + '─'.repeat(board.width * 2 + 1) + '┘');
 }
 
 main()

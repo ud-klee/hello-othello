@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8">
+  <title>Othello Replay</title>
+  <style>
+    #replay_output {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, 200px);
+      gap: 0.5rem;
+    }
+    #replay_output .turn {
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <h1>Othello Replay</h1>
+  <div>
+    <label>
+      Game <span id="game_id">0</span>
+      <br>
+      <input type="range" id="slider" min="0" max="999" value="0" step="1" 
+        style="width: 50%;"/>
+    </label>
+  </div>
+  <div>
+    Result: <span id="result"></span>
+  </div>
+  <div>
+    <button id="replay">Replay</button>
+  </div>
+  <div id="replay_output"></div>
+  <script src="../replay.min.js?v=895f2efa"></script>
+</body>
+</html>

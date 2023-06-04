@@ -33,4 +33,19 @@ export default [
       nodePolyfills(),
     ],
   },
+  {
+    input: 'src/replay.js',
+    output: [
+      {
+        file: 'dist/replay.min.js',
+        format: 'iife',
+        sourcemap: true,
+        plugins: [terser()],
+      },
+    ],
+    plugins: [
+      nodeResolve(),
+      nodePolyfills(),
+    ],
+  },
 ];

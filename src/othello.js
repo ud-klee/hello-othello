@@ -175,6 +175,124 @@ export class Board extends EventEmitter {
 
     return flippable
   }
+  toString(mx, my) {
+    const buf = [];
+    buf.push('┌' + '─'.repeat(this.width * 2 + 1) + '┐');
+    for (let y = 0; y < this.height; y++) {
+      let row = '│';
+      // let blackBits = 0;
+      // let whiteBits = 0;
+      for (let x = 0; x < this.width; x++) {
+        const piece = this.grid[y][x];
+        if (mx === x && my === y) {
+          row += '▸';
+        } else {
+          row += ' ';
+        }
+        if (piece == 'b') {
+          row += '●';
+          // blackBits |= 1 << (7 - x);
+        }
+        if (piece == 'w') {
+          row += '○';
+          // whiteBits |= 1 << (7 - x);
+        }
+        if (!piece) {
+          row += '⬝';
+        }
+      }
+      // const bits = Buffer.from([blackBits, whiteBits]).toString('hex');
+      // buf.push('%s %s', row + ' │', bits.padStart(4, '0'));
+      buf.push(row + ' │');
+    }
+    buf.push('└' + '─'.repeat(this.width * 2 + 1) + '┘');
+    return buf.join('\n')
+  }
+  replay({ source, printBoard, print, onEnd, onBeforeMove, onAfterMove }) {
+    let ended = false;
+    let turn = 1;
+    
+    this.once('end', () => {
+      ended = true;
+    });
+  
+    while (!ended) {
+      let flippable = null;
+  
+      const { value: nextMove } = source.next();
+  
+      if (nextMove === undefined) {
+        throw Error(`No more moves in replay source`);
+      }
+
+      if (nextMove !== null) {
+        const [ x, y ] = nextMove;
+        flippable = this.getFlippable(x, y);
+  
+        if (flippable.length === 0) {
+          throw new Error(`Invalid move: ${nextMove}`);
+        }
+      } else {
+        const candidates = this.search()
+  
+        if (candidates.length > 0) {
+          throw new Error(`Invalid move: pass`);
+        }
+      }
+  
+      if (flippable) {
+        const { x, y } = flippable;
+        if (onBeforeMove) {
+          onBeforeMove([x, y], this.turn, turn)
+        }
+        print(`Turn ${turn}: ${this.nextPiece} plays (${x}, ${y})`);
+        flippable.flip();
+        if (onAfterMove) {
+          onAfterMove([x, y], this.turn, turn)
+        }
+        if (printBoard) {
+          print(this.toString(x, y));
+        }
+      } else {
+        if (onBeforeMove) {
+          onBeforeMove(null, this.turn, turn)
+        }
+        print(`Turn ${turn}: ${this.nextPiece} passes`);
+        this.pass();
+        if (onAfterMove) {
+          onAfterMove(null, this.turn, turn)
+        }
+        if (printBoard) {
+          print(this.toString());
+        }
+      }
+  
+      turn++;
+    }
+  
+    const score = this.score;
+    let result = 2;
+    if (score.b > score.w) {
+      result = 0;
+    }
+    if (score.w > score.b) {
+      result = 1;
+    }
+  
+    if (result === 0) {
+      print('Black wins!');
+    }
+    if (result === 1) {
+      print('White wins!');
+    }
+    if (result === 2) {
+      print('Draw!');
+    }
+
+    if (onEnd) {
+      onEnd(result)
+    }
+  }  
 }
 
 export class BoardView {
@@ -452,14 +570,9 @@ export function analyze(board, maxDepth = 1, root = {}) {
   // console.time('analyze')
   const candidates = _analyzeRecursive(board, maxDepth, root)
   // console.timeEnd('analyze')
-  const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
-  // console.debug(`searchCount / best`, searchCount, best);
-  // console.debug(`candidates`, candidates.map(({ score, flippable }) => {
-  //   const { x, y } = flippable
-  //   return {
-  //     x, y, score,
-  //   }
-  // }))
+  // console.debug(`searchCount`, searchCount`)
+  const best = Math.max(...candidates.map(c => c.score))
+
   // keep the best ones and shuffle
   return candidates
     .filter(f => f.score === best)
@@ -482,23 +595,11 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
     return {
       score,
       flippable: f,
-      finalize(best, worst) {
-        if (best < 0 && worst < 0) {
-          this.score = Math.min(best, worst);
-        } else if (best > 0 && worst > 0) {
-          this.score =  Math.max(best, worst);
-        } else {
-          this.score =  best + worst;
-        }
-      },
     }
   })
-  // const best = candidates.reduce((score, c) => Math.max(score, c.score), -Infinity);
-  // const label = `analyze[${depth}/${maxDepth}]: c=${candidates.length} b=${best}`;
+  node.moves = candidates.map(({ flippable: {x, y} }) => [x, y])
   node.gains = candidates.map(({ score }) => score);
-  // node.best = best;
   node.children = []
-  // console.group(label);
   for (const cand of candidates) {
     // flip and analyze the next move
     if (depth < maxDepth) {
@@ -507,13 +608,9 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
       let nextCandidates = _analyzeRecursive(board, maxDepth, child, depth + 1);
       node.children.push(child);
       if (nextCandidates.length > 0) {
-        nextCandidates.forEach(c => {
-          c.score = cand.score - c.score;
-        })
-        nextCandidates.sort((a, b) => b.score - a.score);
-        child.best = nextCandidates[0].score;
-        child.worst = nextCandidates[nextCandidates.length - 1].score;
-        cand.finalize(child.best, child.worst);
+        // consider only opponent's best moves
+        const best = Math.max(...nextCandidates.map(c => c.score));
+        cand.score = cand.score - best;
       } else {
         // if opponent has no move, we get an advantage
         // we favor such moves over anything else
@@ -526,6 +623,5 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
     }
   }
   node.scores = candidates.map(({ score }) => score);
-  // console.groupEnd(label);
   return candidates
 }
