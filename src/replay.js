@@ -9,7 +9,6 @@ function main() {
   const replay = document.getElementById('replay');
 
   function selectGame(index) {
-    game_id.innerText = index;
     const gameFile = gamesIndex[index];
 
     const [ , score ] = gameFile.split('_');
@@ -21,6 +20,15 @@ function main() {
   slider.addEventListener('input', (event) => {
     const index = event.target.value;
     selectGame(index);
+    game_id.value = index;
+  });
+
+  game_id.addEventListener('change', (event) => {
+    if (event.target.validity.valid) {
+      const index = event.target.value;
+      selectGame(index);
+      slider.value = index;
+    }
   });
 
   replay.addEventListener('click', (event) => {
@@ -33,6 +41,7 @@ function main() {
 
   loadGamesIndex().then(() => {
     slider.max = gamesIndex.length - 1;
+    game_id.max = slider.max;
     selectGame(0);
   });
 }

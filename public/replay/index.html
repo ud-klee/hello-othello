@@ -4,14 +4,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta charset="utf-8">
   <title>Othello Replay</title>
+  <link rel="stylesheet" href="https://adobe-fonts.github.io/source-code-pro/source-code-pro.css">
   <style>
     #replay_output {
       display: grid;
-      grid-template-columns: repeat(auto-fit, 200px);
+      grid-template-columns: repeat(auto-fit, 240px);
       gap: 0.5rem;
     }
     #replay_output .turn {
       display: inline-block;
+    }
+    #replay_output pre {
+      font-family: 'Source Code Pro', monospace;
+    }
+    #slider {
+      width: 75%;
+    }
+    #game_id {
+      text-align: right;
     }
   </style>
 </head>
@@ -19,11 +29,10 @@
   <h1>Othello Replay</h1>
   <div>
     <label>
-      Game <span id="game_id">0</span>
-      <br>
-      <input type="range" id="slider" min="0" max="999" value="0" step="1" 
-        style="width: 50%;"/>
+      Game <input type="number" id="game_id" min="0" max="999" value="0" required>
     </label>
+    <br>
+    <input type="range" id="slider" min="0" max="999" value="0" step="1">
   </div>
   <div>
     Result: <span id="result"></span>
@@ -32,6 +41,6 @@
     <button id="replay">Replay</button>
   </div>
   <div id="replay_output"></div>
-  <script src="../replay.min.js?v=895f2efa"></script>
+  <script src="../replay.min.js?v=5bb0803c"></script>
 </body>
 </html>

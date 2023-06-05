@@ -8,7 +8,7 @@ function main() {
   const canvas = $('#canvas');
   const board = new othello.Board(sessionStorage.getItem('board'));
   const view = new othello.BoardView(canvas, board);
-  const finder = new othello.BruteForceFinder('./worker.min.js?v=895f2efa');
+  const finder = new othello.BruteForceFinder('./worker.min.js?v=5bb0803c');
 
   let [px, py] = [-1, -1]
   let flippable = null;

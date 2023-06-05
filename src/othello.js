@@ -198,7 +198,7 @@ export class Board extends EventEmitter {
           // whiteBits |= 1 << (7 - x);
         }
         if (!piece) {
-          row += '⬝';
+          row += ' ';
         }
       }
       // const bits = Buffer.from([blackBits, whiteBits]).toString('hex');
