@@ -1,14 +1,47 @@
 import * as othello from './othello.js';
 
-const { $, $$ } = othello;
+const { $, $$, timeout } = othello;
 
 const BOT_LEVEL = 4;  // 1 (fast) - 4 (slower)
 
+export const board = new othello.Board(sessionStorage.getItem('board'));
+
+const engine = new othello.OthelloEngine('./worker.min.js?v=42a04670');
+export const whiteBot = new othello.Bot(board, 'w', engine, BOT_LEVEL, false);
+export const blackBot = new othello.Bot(board, 'b', engine, BOT_LEVEL - 1, false);
+
+export async function replay(gameId = 0, maxTurns = 99) {
+  if (maxTurns < 2) {
+    return
+  }
+
+  const gameIndex = await gameIndexFuture;
+  const gameFile = gameIndex[gameId];
+  const gameHistory = await fetch(`replay/games/${gameFile}`).then(res => res.json());
+
+  maxTurns = Math.min(maxTurns, gameHistory.length - 1);
+
+  if (maxTurns % 2 == 1) {
+    maxTurns++
+  }
+
+  board.reset()
+  whiteBot.sleep();
+
+  gameHistory.length = maxTurns;
+  await board.replay({
+    source: gameHistory,
+    delay: 300,
+  })
+
+  whiteBot.wakeup();
+}
+
+const gameIndexFuture = fetch('replay/games-index.json').then(res => res.json())
+
 function main() {
   const canvas = $('#canvas');
-  const board = new othello.Board(sessionStorage.getItem('board'));
   const view = new othello.BoardView(canvas, board);
-  const finder = new othello.BruteForceFinder('./worker.min.js?v=5bb0803c');
 
   let [px, py] = [-1, -1]
   let flippable = null;
@@ -71,13 +104,6 @@ function main() {
     updatePlayer();
   }
 
-  function newGame() {
-    board.reset();
-    refreshUI();
-    $('#auto input').checked = false;
-    blackBot.sleep();
-  }
-
   canvas.oncontextmenu = () => false
   canvas.addEventListener('pointerup', handleFlip)
   canvas.addEventListener('pointermove', handlePreview)
@@ -95,6 +121,12 @@ function main() {
     updateScore()
   })
 
+  board.on('reset', () => {
+    refreshUI();
+    $('#auto input').checked = false;
+    blackBot.sleep();
+  })
+
   board.on('end', () => {
     setTimeout(() => {
       if (board.score['b'] > board.score['w']) {
@@ -110,7 +142,7 @@ function main() {
   })
 
   $('#controls .pass').addEventListener('click', e => {
-    finder.analyze(board, 2).then(flippables => {
+    engine.analyze(board, 2).then(flippables => {
       if (flippables.length > 0) {
         alert(`Don't pass yet! You can flip here!`)
         view.clearUI();
@@ -123,7 +155,7 @@ function main() {
 
   $('#controls .new').addEventListener('click', e => {
     if (confirm('Start a new game?')) {
-      newGame();
+      board.reset()
     }
   })
 
@@ -151,19 +183,16 @@ function main() {
   })
 
   refreshUI();
-  // console.debug(board)
 
   function botThinking(t) {
     view.setCursorStyle(t ? 'progress' : 'auto');
     $$('#controls button').forEach(e => e.disabled = t);
   }
 
-  const whiteBot = new othello.Bot(board, 'w', finder, BOT_LEVEL);
   whiteBot.on('thinkstart', () => botThinking(true));
   whiteBot.on('thinkend', () => botThinking(false));
   whiteBot.play();
 
-  const blackBot = new othello.Bot(board, 'b', finder, BOT_LEVEL - 1);
   blackBot.on('thinkstart', () => botThinking(true));
   blackBot.on('thinkend', () => botThinking(false));
   blackBot.play();

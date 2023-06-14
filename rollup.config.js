@@ -11,6 +11,9 @@ export default [
         format: 'iife',
         sourcemap: true,
         plugins: [terser()],
+        globals: {
+          tf: 'globalThis.tf',
+        },
       },
     ],
     plugins: [
@@ -24,8 +27,12 @@ export default [
       {
         file: 'dist/app.min.js',
         format: 'iife',
+        name: 'othello',
         sourcemap: true,
         plugins: [terser()],
+        globals: {
+          tf: 'globalThis.tf',
+        },
       },
     ],
     plugins: [
@@ -41,6 +48,9 @@ export default [
         format: 'iife',
         sourcemap: true,
         plugins: [terser()],
+        globals: {
+          tf: 'globalThis.tf',
+        },
       },
     ],
     plugins: [

@@ -1,12 +1,20 @@
 import fs from 'fs'
-import { Board, Flippable, analyze } from './othello.js'
+import * as tf from '@tensorflow/tfjs-node'
+import { Board, analyze } from './othello.js'
+import * as keras from './keras.js'
 
-const searchDepth = {
-  'b': 4,
-  'w': 4,
+const config = {
+  'b': {
+    searchDepth: 4,
+    useNN: false,
+  },
+  'w': {
+    searchDepth: 4,
+    useNN: false,
+  },
 }
 
-function main() {
+async function main() {
   const board = new Board();
   const [,, file] = process.argv;
   let replay = null;
@@ -15,12 +23,17 @@ function main() {
     replay = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
 
+  if (!replay && Object.values(config).some(cfg => cfg.useNN)) {
+    await keras.init(tf, null, 'file://./dist/models/othello_cnn_2000');
+  }
+
   const history = []
   const trainingData = []
 
-  function *bot() {
+  async function *bot() {
     while (true) {
-      const result = analyze(board.copy(), searchDepth[board.nextPiece]);
+      const { searchDepth, useNN } = config[board.nextPiece];
+      const result = await analyze(board.copy(), searchDepth, useNN);
       if (result.length > 0) {
         const { x, y } = result[0];
         yield [x, y];
@@ -42,7 +55,7 @@ function main() {
       const filename = `${now}_${board.score.b}v${board.score.w}_${dedup}.json`;
       if (!fs.existsSync(`games/${filename}`)) {
         fs.writeFileSync(`games/${filename}`, JSON.stringify(history));
-        fs.writeFileSync(`training/${subdir}/${filename}`, JSON.stringify(trainingData));
+        // fs.writeFileSync(`training/${subdir}/${filename}`, JSON.stringify(trainingData));
       } else {
         throw new Error('Failed to save results: file already exists')
       }
@@ -60,16 +73,11 @@ function main() {
     history.push(move);
   }
 
-  function print(str) {
-    console.info(str)
-  }
-
-  board.replay({
-    source: replay ? replay.values() : bot(),
+  await board.replay({
+    source: replay ? replay : bot(),
     printBoard: !!replay,
-    print,
     onEnd,
-    onBeforeMove,
+    // onBeforeMove,
     onAfterMove,
   });
 }

@@ -1,7 +1,11 @@
 import EventEmitter from 'events';
+import * as keras from './keras.js';
 
 export const $ = (path, parent = document) => parent.querySelector(path);
 export const $$ = (path, parent = document) => parent.querySelectorAll(path);
+
+export const timeout = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 
 export class Board extends EventEmitter {
   constructor(json) {
@@ -57,6 +61,7 @@ export class Board extends EventEmitter {
     this.turn = 0
     this.passCount = 0
     this.undoStack = []
+    this.emit('reset')
   }
   search() {
     const dir = [[-1,-1], [0,-1], [1,-1], [-1,0], [1,0], [-1,1], [0,1], [1,1]];
@@ -85,7 +90,6 @@ export class Board extends EventEmitter {
     if (!this.undoable()) return
     const undoable = this.undoStack.pop();
     undoable.undo();
-    // console.debug(`Board: undo - undoable=${this.undoStack.length}`)
   }
   undoable() {
     return this.undoStack.length > 0
@@ -110,7 +114,7 @@ export class Board extends EventEmitter {
     }
   }
   nextTurn(ended = false) {
-    this.turn = (this.turn + 1) % 2;
+    this.turn = 1 - this.turn;
     this.emit('turnChange', ended)
   }
   set(x, y) {
@@ -208,21 +212,35 @@ export class Board extends EventEmitter {
     buf.push('└' + '─'.repeat(this.width * 2 + 1) + '┘');
     return buf.join('\n')
   }
-  replay({ source, printBoard, print, onEnd, onBeforeMove, onAfterMove }) {
+  async replay({ source, printBoard, print, delay, onEnd, onBeforeMove, onAfterMove }) {
     let ended = false;
     let turn = 1;
-    
+
     this.once('end', () => {
       ended = true;
     });
+
+    if (!print) {
+      print = (str) => console.info(str)
+    }
+
+    async function *asyncIter(arr) {
+      for (const item of arr) {
+        yield item;
+      }
+    }
+
+    if (Array.isArray(source)) {
+      source = asyncIter(source)
+    }
   
     while (!ended) {
       let flippable = null;
   
-      const { value: nextMove } = source.next();
+      const { value: nextMove } = await source.next();
   
       if (nextMove === undefined) {
-        throw Error(`No more moves in replay source`);
+        return
       }
 
       if (nextMove !== null) {
@@ -266,7 +284,11 @@ export class Board extends EventEmitter {
           print(this.toString());
         }
       }
-  
+
+      if (delay > 0) {
+        await timeout(delay)
+      }
+
       turn++;
     }
   
@@ -292,7 +314,30 @@ export class Board extends EventEmitter {
     if (onEnd) {
       onEnd(result)
     }
-  }  
+  }
+  async predict(moves) {
+    const inputs = []
+    for (const [ x, y ] of moves) {
+      inputs.push(this.encode(x, y, this.turn))
+    }
+    return keras.predict(inputs)
+  }
+  encode(mx, my, who) {
+    const encoding = []
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const piece = this.grid[y][x];
+        let val = 127
+        if (piece == 'b') { val = 0 }
+        if (piece == 'w') { val = 255 }
+        if (piece == null && mx == x && my == y) {
+          val = who == 0 ? 64 : 192
+        }
+        encoding.push(val)
+      }
+    }
+    return encoding
+  }
 }
 
 export class BoardView {
@@ -448,11 +493,11 @@ export class Flippable {
   }
 }
 
-export class BruteForceFinder {
+export class OthelloEngine {
   constructor(path) {
     this.worker = new Worker(path)
   }
-  async analyze(board, maxDepth = 1) {
+  async analyze(board, maxDepth = 1, useNN = false) {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
         const result = []
@@ -465,18 +510,19 @@ export class BruteForceFinder {
         resolve(result);
       }, { once: true })
 
-      this.worker.postMessage({ board: board.serialize(), maxDepth });
+      this.worker.postMessage({ board: board.serialize(), maxDepth, useNN });
     })
   }
 }
 
 export class Bot extends EventEmitter {
-  constructor(board, piece, finder, level) {
+  constructor(board, piece, engine, level, useNN = false) {
     super();
     this.board = board;
     this.piece = piece;
-    this.finder = finder;
+    this.engine = engine;
     this.level = level;
+    this.useNN = useNN;
     this.timer = 0;
     this.sleeping = false;
   }
@@ -508,7 +554,7 @@ export class Bot extends EventEmitter {
     } else {
       level += 1;
     }
-    this.finder.analyze(this.board, Math.max(1, level)).then(flippables => {
+    this.engine.analyze(this.board, Math.max(1, level), this.useNN).then(flippables => {
       this.emit('thinkend');
       if (flippables.length > 0) {
         const { x, y } = flippables[0];
@@ -565,12 +611,13 @@ const MidGameWeights = [
 
 let searchCount;
 
-export function analyze(board, maxDepth = 1, root = {}) {
+export async function analyze(board, maxDepth = 1, useNN = false, root = {}) {
   searchCount = 0;
   // console.time('analyze')
-  const candidates = _analyzeRecursive(board, maxDepth, root)
+  const candidates = await _analyzeRecursive(board, maxDepth, useNN, root)
   // console.timeEnd('analyze')
   // console.debug(`searchCount`, searchCount`)
+  // console.debug(`root`, root)
   const best = Math.max(...candidates.map(c => c.score))
 
   // keep the best ones and shuffle
@@ -582,7 +629,7 @@ export function analyze(board, maxDepth = 1, root = {}) {
     })
 }
 
-function _analyzeRecursive(board, maxDepth, node, depth = 1) {
+async function _analyzeRecursive(board, maxDepth, useNN, node, depth = 1) {
   searchCount++;
   let weights;
   if (board.totalScore <= 32) {
@@ -599,13 +646,30 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
   })
   node.moves = candidates.map(({ flippable: {x, y} }) => [x, y])
   node.gains = candidates.map(({ score }) => score);
+  node.scores = node.gains
   node.children = []
+
+  if (candidates.length == 0) {
+    return []
+  }
+
+  if (depth == 1 && candidates.length == 1) {
+    return candidates
+  }
+
+  if (useNN && board.totalScore > 28 && candidates.length > 0) {
+    node.predictions = await board.predict(node.moves)
+    const best = Math.min(...node.predictions.map(p => p[1]))
+    node.predicted_best = node.predictions.findIndex(p => p[1] === best)
+    return [candidates[node.predicted_best]]
+  }
+
   for (const cand of candidates) {
     // flip and analyze the next move
     if (depth < maxDepth) {
       cand.flippable.flip();
       const child = {};
-      let nextCandidates = _analyzeRecursive(board, maxDepth, child, depth + 1);
+      let nextCandidates = await _analyzeRecursive(board, maxDepth, useNN, child, depth + 1);
       node.children.push(child);
       if (nextCandidates.length > 0) {
         // consider only opponent's best moves
@@ -622,6 +686,7 @@ function _analyzeRecursive(board, maxDepth, node, depth = 1) {
       // console.debug(`(%d, %d) = %d`, x, y, cand.score);
     }
   }
+
   node.scores = candidates.map(({ score }) => score);
   return candidates
 }

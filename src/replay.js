@@ -15,6 +15,8 @@ function main() {
     const [ black, white ] = score.split('v');
 
     result.innerText = `Black: ${black} White: ${white}`;
+
+    history.replaceState(null, '', `#/game/${index}`);
   }
 
   slider.addEventListener('input', (event) => {
@@ -40,9 +42,23 @@ function main() {
   })
 
   loadGamesIndex().then(() => {
-    slider.max = gamesIndex.length - 1;
-    game_id.max = slider.max;
-    selectGame(0);
+    const max = gamesIndex.length - 1
+    slider.max = max;
+    game_id.max = max;
+
+    let id = 0;
+    const hash = window.location.hash.slice(1);
+
+    if (hash) {
+      const matches = hash.match(/^\/game\/(\d+)/);
+      if (matches) {
+        id = Math.min(parseInt(matches[1]), max);
+        slider.value = id;
+        game_id.value = id;
+      }
+    }
+
+    selectGame(id);
   });
 }
 
@@ -60,7 +76,7 @@ async function loadAndReplayGame(gameFile) {
   if (res.ok) {
     const history = await res.json();
     try {
-      replayGame(history);
+      await replayGame(history);
     } catch (err) {
       console.error(err);
       alert('Something went wrong! Check the console for details.');
@@ -68,7 +84,7 @@ async function loadAndReplayGame(gameFile) {
   }
 }
 
-function replayGame(history) {
+async function replayGame(history) {
   const board = new Board();
   let currentTurn = 0;
 
@@ -92,8 +108,8 @@ function replayGame(history) {
     currentTurn = turn;
   }
 
-  board.replay({
-    source: history.values(),
+  await board.replay({
+    source: history,
     printBoard: true,
     print,
     onBeforeMove,
