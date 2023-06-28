@@ -1,5 +1,7 @@
 import fs from 'fs'
-import { Board, analyze } from './othello.js'
+import { Board, BruteForceEngine } from './othello.js'
+
+const engine = new BruteForceEngine()
 
 const config = {
   'b': {
@@ -25,7 +27,7 @@ async function main() {
   async function *bot() {
     while (true) {
       const { botLevel } = config[board.nextPiece];
-      const result = await analyze(board.copy(), botLevel);
+      const result = await engine.findNextMove(board.copy(), botLevel);
       if (result.length > 0) {
         const { x, y } = result[0];
         yield [x, y];

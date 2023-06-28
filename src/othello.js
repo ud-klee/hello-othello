@@ -469,11 +469,11 @@ export class Flippable {
   }
 }
 
-export class OthelloEngine {
+export class BruteForceEngineWorker {
   constructor(path) {
     this.worker = new Worker(path)
   }
-  async analyze(board, maxDepth = 1) {
+  async findNextMove(board, level) {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
         const result = []
@@ -486,8 +486,114 @@ export class OthelloEngine {
         resolve(result);
       }, { once: true })
 
-      this.worker.postMessage({ board: board.serialize(), maxDepth });
+      this.worker.postMessage({ board: board.serialize(), level });
     })
+  }
+}
+
+export class BruteForceEngine {
+  OpenWeights = [
+    [20,-2,5,5,5,5,-2,20],
+    [-2,-5,1,1,1,1,-5,-2],
+    [ 5, 1,1,1,1,1, 1, 5],
+    [ 5, 1,1,1,1,1, 1, 5],
+    [ 5, 1,1,1,1,1, 1, 5],
+    [ 5, 1,1,1,1,1, 1, 5],
+    [-2,-5,1,1,1,1,-5,-2],
+    [20,-2,5,5,5,5,-2,20],
+  ];
+  
+  MidGameWeights = [
+    [ 9, 0,3,3,3,3, 0, 9],
+    [ 0,-2,1,1,1,1,-2, 0],
+    [ 3, 1,1,1,1,1, 1, 3],
+    [ 3, 1,1,1,1,1, 1, 3],
+    [ 3, 1,1,1,1,1, 1, 3],
+    [ 3, 1,1,1,1,1, 1, 3],
+    [ 0,-2,1,1,1,1,-2, 0],
+    [ 9, 0,3,3,3,3, 0, 9],
+  ];
+  
+  searchCount = 0
+
+  async findNextMove(board, level, root = {}) {
+    this.searchCount = 0;
+    let maxDepth = level
+    // adaptively adjust the search depth
+    if (board.totalScore < 8) {
+      maxDepth -= 1;
+    } else if (board.totalScore >= 16) {
+      maxDepth += 1;
+    }
+    // console.time('analyze')
+    const candidates = await this.#findRecursive(board, maxDepth, root)
+    // console.timeEnd('analyze')
+    // console.debug(`searchCount`, searchCount`)
+    // console.debug(`root`, root)
+    const best = Math.max(...candidates.map(c => c.score))
+
+    // keep the best ones and shuffle
+    return candidates
+      .filter(f => f.score === best)
+      .sort(() => Math.random() - 0.5)
+      .map(f => {
+        return f.flippable
+      })
+  }
+
+  async #findRecursive(board, maxDepth, node, depth = 1) {
+    this.searchCount++;
+    let weights;
+    if (board.totalScore <= 32) {
+      weights = this.OpenWeights;
+    } else {
+      weights = this.MidGameWeights;
+    }
+    const candidates = board.search().map(f => {
+      const score = weights[f.y][f.x] + f.length
+      return {
+        score,
+        flippable: f,
+      }
+    })
+    node.moves = candidates.map(({ flippable: {x, y} }) => [x, y])
+    node.gains = candidates.map(({ score }) => score);
+    node.scores = node.gains
+    node.children = []
+
+    if (candidates.length == 0) {
+      return []
+    }
+
+    if (depth == 1 && candidates.length == 1) {
+      return candidates
+    }
+
+    for (const _candidate of candidates) {
+      // flip and analyze the next move
+      if (depth < maxDepth) {
+        _candidate.flippable.flip();
+        const child = {};
+        let nextCandidates = await this.#findRecursive(board, maxDepth, child, depth + 1);
+        node.children.push(child);
+        if (nextCandidates.length > 0) {
+          // consider only opponent's best moves
+          const best = Math.max(...nextCandidates.map(c => c.score));
+          _candidate.score = _candidate.score - best;
+        } else {
+          // if opponent has no move, we get an advantage
+          // we favor such moves over anything else
+          _candidate.score += 100;
+        }
+        board.undo();
+      } else {
+        // const { x, y } = _candidate.flippable;
+        // console.debug(`(%d, %d) = %d`, x, y, _candidate.score);
+      }
+    }
+
+    node.scores = candidates.map(({ score }) => score);
+    return candidates
   }
 }
 
@@ -520,16 +626,7 @@ export class Bot extends EventEmitter {
   _play() {
     this.say(`thinking...`);
     this.emit('thinkstart');
-    // adaptively adjust the search depth
-    let level = this.level;
-    if (this.board.totalScore < 8) {
-      level -= 1;
-    } else if (this.board.totalScore < 16) {
-      // nop
-    } else {
-      level += 1;
-    }
-    this.engine.analyze(this.board, Math.max(1, level)).then(flippables => {
+    this.engine.findNextMove(this.board, this.level).then(flippables => {
       this.emit('thinkend');
       if (flippables.length > 0) {
         const { x, y } = flippables[0];
@@ -560,101 +657,4 @@ export class Bot extends EventEmitter {
       clearTimeout(this.timer)
     })
   }
-}
-
-const OpenWeights = [
-  [20,-2,5,5,5,5,-2,20],
-  [-2,-5,1,1,1,1,-5,-2],
-  [ 5, 1,1,1,1,1, 1, 5],
-  [ 5, 1,1,1,1,1, 1, 5],
-  [ 5, 1,1,1,1,1, 1, 5],
-  [ 5, 1,1,1,1,1, 1, 5],
-  [-2,-5,1,1,1,1,-5,-2],
-  [20,-2,5,5,5,5,-2,20],
-];
-
-const MidGameWeights = [
-  [ 9, 0,3,3,3,3, 0, 9],
-  [ 0,-2,1,1,1,1,-2, 0],
-  [ 3, 1,1,1,1,1, 1, 3],
-  [ 3, 1,1,1,1,1, 1, 3],
-  [ 3, 1,1,1,1,1, 1, 3],
-  [ 3, 1,1,1,1,1, 1, 3],
-  [ 0,-2,1,1,1,1,-2, 0],
-  [ 9, 0,3,3,3,3, 0, 9],
-];
-
-let searchCount;
-
-export async function analyze(board, maxDepth = 1, root = {}) {
-  searchCount = 0;
-  // console.time('analyze')
-  const candidates = await _analyzeRecursive(board, maxDepth, root)
-  // console.timeEnd('analyze')
-  // console.debug(`searchCount`, searchCount`)
-  // console.debug(`root`, root)
-  const best = Math.max(...candidates.map(c => c.score))
-
-  // keep the best ones and shuffle
-  return candidates
-    .filter(f => f.score === best)
-    .sort(() => Math.random() - 0.5)
-    .map(f => {
-      return f.flippable
-    })
-}
-
-async function _analyzeRecursive(board, maxDepth, node, depth = 1) {
-  searchCount++;
-  let weights;
-  if (board.totalScore <= 32) {
-    weights = OpenWeights;
-  } else {
-    weights = MidGameWeights;
-  }
-  const candidates = board.search().map(f => {
-    const score = weights[f.y][f.x] + f.length
-    return {
-      score,
-      flippable: f,
-    }
-  })
-  node.moves = candidates.map(({ flippable: {x, y} }) => [x, y])
-  node.gains = candidates.map(({ score }) => score);
-  node.scores = node.gains
-  node.children = []
-
-  if (candidates.length == 0) {
-    return []
-  }
-
-  if (depth == 1 && candidates.length == 1) {
-    return candidates
-  }
-
-  for (const cand of candidates) {
-    // flip and analyze the next move
-    if (depth < maxDepth) {
-      cand.flippable.flip();
-      const child = {};
-      let nextCandidates = await _analyzeRecursive(board, maxDepth, child, depth + 1);
-      node.children.push(child);
-      if (nextCandidates.length > 0) {
-        // consider only opponent's best moves
-        const best = Math.max(...nextCandidates.map(c => c.score));
-        cand.score = cand.score - best;
-      } else {
-        // if opponent has no move, we get an advantage
-        // we favor such moves over anything else
-        cand.score += 100;
-      }
-      board.undo();
-    } else {
-      // const { x, y } = cand.flippable;
-      // console.debug(`(%d, %d) = %d`, x, y, cand.score);
-    }
-  }
-
-  node.scores = candidates.map(({ score }) => score);
-  return candidates
 }

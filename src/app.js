@@ -2,13 +2,14 @@ import * as othello from './othello.js';
 
 const { $, $$ } = othello;
 
-const BOT_LEVEL = 4;  // 1 (fast) - 4 (slower)
+const WHITE_BOT_LEVEL = 4;
+const BLACK_BOT_LEVEL = 4;
 
 export const board = new othello.Board(sessionStorage.getItem('board'));
 
-const engine = new othello.OthelloEngine('./worker.min.js?v=a1ab5d53');
-export const whiteBot = new othello.Bot(board, 'w', engine, BOT_LEVEL, false);
-export const blackBot = new othello.Bot(board, 'b', engine, BOT_LEVEL - 1, false);
+const engine = new othello.BruteForceEngineWorker('./worker.min.js?v=d5b30790');
+export const whiteBot = new othello.Bot(board, 'w', engine, WHITE_BOT_LEVEL, false);
+export const blackBot = new othello.Bot(board, 'b', engine, BLACK_BOT_LEVEL, false);
 
 export async function replay(gameId = 0, maxTurns = 99) {
   if (maxTurns < 2) {
@@ -31,7 +32,7 @@ export async function replay(gameId = 0, maxTurns = 99) {
   gameHistory.length = maxTurns;
   await board.replay({
     source: gameHistory,
-    delay: 300,
+    delay: 300, // align with css transition
   })
 
   whiteBot.wakeup();
@@ -142,7 +143,7 @@ function main() {
   })
 
   $('#controls .pass').addEventListener('click', e => {
-    engine.analyze(board, 2).then(flippables => {
+    engine.findNextMove(board, 2).then(flippables => {
       if (flippables.length > 0) {
         alert(`Don't pass yet! You can flip here!`)
         view.clearUI();
