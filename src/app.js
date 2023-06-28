@@ -1,12 +1,12 @@
 import * as othello from './othello.js';
 
-const { $, $$, timeout } = othello;
+const { $, $$ } = othello;
 
 const BOT_LEVEL = 4;  // 1 (fast) - 4 (slower)
 
 export const board = new othello.Board(sessionStorage.getItem('board'));
 
-const engine = new othello.OthelloEngine('./worker.min.js?v=42a04670');
+const engine = new othello.OthelloEngine('./worker.min.js?v=a1ab5d53');
 export const whiteBot = new othello.Bot(board, 'w', engine, BOT_LEVEL, false);
 export const blackBot = new othello.Bot(board, 'b', engine, BOT_LEVEL - 1, false);
 

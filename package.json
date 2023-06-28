@@ -15,7 +15,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@tensorflow/tfjs-node": "^4.7.0",
     "rollup": "^3.23.0",
     "serve": "^14.2.0"
   },

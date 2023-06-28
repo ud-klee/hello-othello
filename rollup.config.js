@@ -31,7 +31,6 @@ export default [
         sourcemap: true,
         plugins: [terser()],
         globals: {
-          tf: 'globalThis.tf',
         },
       },
     ],
@@ -49,7 +48,6 @@ export default [
         sourcemap: true,
         plugins: [terser()],
         globals: {
-          tf: 'globalThis.tf',
         },
       },
     ],

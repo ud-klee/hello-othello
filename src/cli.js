@@ -1,16 +1,12 @@
 import fs from 'fs'
-import * as tf from '@tensorflow/tfjs-node'
 import { Board, analyze } from './othello.js'
-import * as keras from './keras.js'
 
 const config = {
   'b': {
-    searchDepth: 4,
-    useNN: false,
+    botLevel: 4,
   },
   'w': {
-    searchDepth: 4,
-    useNN: false,
+    botLevel: 4,
   },
 }
 
@@ -23,17 +19,13 @@ async function main() {
     replay = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
 
-  if (!replay && Object.values(config).some(cfg => cfg.useNN)) {
-    await keras.init(tf, null, 'file://./dist/models/othello_cnn_2000');
-  }
-
   const history = []
   const trainingData = []
 
   async function *bot() {
     while (true) {
-      const { searchDepth, useNN } = config[board.nextPiece];
-      const result = await analyze(board.copy(), searchDepth, useNN);
+      const { botLevel } = config[board.nextPiece];
+      const result = await analyze(board.copy(), botLevel);
       if (result.length > 0) {
         const { x, y } = result[0];
         yield [x, y];

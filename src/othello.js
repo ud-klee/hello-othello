@@ -1,5 +1,4 @@
 import EventEmitter from 'events';
-import * as keras from './keras.js';
 
 export const $ = (path, parent = document) => parent.querySelector(path);
 export const $$ = (path, parent = document) => parent.querySelectorAll(path);
@@ -315,29 +314,6 @@ export class Board extends EventEmitter {
       onEnd(result)
     }
   }
-  async predict(moves) {
-    const inputs = []
-    for (const [ x, y ] of moves) {
-      inputs.push(this.encode(x, y, this.turn))
-    }
-    return keras.predict(inputs)
-  }
-  encode(mx, my, who) {
-    const encoding = []
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const piece = this.grid[y][x];
-        let val = 127
-        if (piece == 'b') { val = 0 }
-        if (piece == 'w') { val = 255 }
-        if (piece == null && mx == x && my == y) {
-          val = who == 0 ? 64 : 192
-        }
-        encoding.push(val)
-      }
-    }
-    return encoding
-  }
 }
 
 export class BoardView {
@@ -497,7 +473,7 @@ export class OthelloEngine {
   constructor(path) {
     this.worker = new Worker(path)
   }
-  async analyze(board, maxDepth = 1, useNN = false) {
+  async analyze(board, maxDepth = 1) {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
         const result = []
@@ -510,19 +486,18 @@ export class OthelloEngine {
         resolve(result);
       }, { once: true })
 
-      this.worker.postMessage({ board: board.serialize(), maxDepth, useNN });
+      this.worker.postMessage({ board: board.serialize(), maxDepth });
     })
   }
 }
 
 export class Bot extends EventEmitter {
-  constructor(board, piece, engine, level, useNN = false) {
+  constructor(board, piece, engine, level) {
     super();
     this.board = board;
     this.piece = piece;
     this.engine = engine;
     this.level = level;
-    this.useNN = useNN;
     this.timer = 0;
     this.sleeping = false;
   }
@@ -554,7 +529,7 @@ export class Bot extends EventEmitter {
     } else {
       level += 1;
     }
-    this.engine.analyze(this.board, Math.max(1, level), this.useNN).then(flippables => {
+    this.engine.analyze(this.board, Math.max(1, level)).then(flippables => {
       this.emit('thinkend');
       if (flippables.length > 0) {
         const { x, y } = flippables[0];
@@ -611,10 +586,10 @@ const MidGameWeights = [
 
 let searchCount;
 
-export async function analyze(board, maxDepth = 1, useNN = false, root = {}) {
+export async function analyze(board, maxDepth = 1, root = {}) {
   searchCount = 0;
   // console.time('analyze')
-  const candidates = await _analyzeRecursive(board, maxDepth, useNN, root)
+  const candidates = await _analyzeRecursive(board, maxDepth, root)
   // console.timeEnd('analyze')
   // console.debug(`searchCount`, searchCount`)
   // console.debug(`root`, root)
@@ -629,7 +604,7 @@ export async function analyze(board, maxDepth = 1, useNN = false, root = {}) {
     })
 }
 
-async function _analyzeRecursive(board, maxDepth, useNN, node, depth = 1) {
+async function _analyzeRecursive(board, maxDepth, node, depth = 1) {
   searchCount++;
   let weights;
   if (board.totalScore <= 32) {
@@ -657,19 +632,12 @@ async function _analyzeRecursive(board, maxDepth, useNN, node, depth = 1) {
     return candidates
   }
 
-  if (useNN && board.totalScore > 28 && candidates.length > 0) {
-    node.predictions = await board.predict(node.moves)
-    const best = Math.min(...node.predictions.map(p => p[1]))
-    node.predicted_best = node.predictions.findIndex(p => p[1] === best)
-    return [candidates[node.predicted_best]]
-  }
-
   for (const cand of candidates) {
     // flip and analyze the next move
     if (depth < maxDepth) {
       cand.flippable.flip();
       const child = {};
-      let nextCandidates = await _analyzeRecursive(board, maxDepth, useNN, child, depth + 1);
+      let nextCandidates = await _analyzeRecursive(board, maxDepth, child, depth + 1);
       node.children.push(child);
       if (nextCandidates.length > 0) {
         // consider only opponent's best moves
