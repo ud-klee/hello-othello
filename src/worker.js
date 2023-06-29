@@ -1,13 +1,18 @@
 import { Board, BruteForceEngine } from './othello.js';
 
-let engine = new BruteForceEngine();
+let engine;
 
 globalThis.onmessage = function (e) {
   const { board, level } = e.data
   const gameTree = {}
-  engine.findNextMove(new Board(board), level, gameTree).then(flippables => {
+
+  if (!engine) {
+    engine = new BruteForceEngine(level)
+  }
+
+  engine.findNextMove(new Board(board), gameTree).then(nextMoves => {
     globalThis.postMessage({
-      result: flippables.map(({ x, y, flippables }) => ({ x, y, flippables })),
+      nextMoves,
       tree: gameTree,
     })
   })

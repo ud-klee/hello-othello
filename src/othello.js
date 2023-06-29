@@ -253,7 +253,8 @@ export class Board extends EventEmitter {
         const candidates = this.search()
   
         if (candidates.length > 0) {
-          throw new Error(`Invalid move: pass`);
+          const { x, y } = candidates[0];
+          throw new Error(`Can't pass; possible move at (${x}, ${y})`);
         }
       }
   
@@ -470,23 +471,18 @@ export class Flippable {
 }
 
 export class BruteForceEngineWorker {
-  constructor(path) {
+  constructor(path, level) {
     this.worker = new Worker(path)
+    this.level = level
   }
-  async findNextMove(board, level) {
+  async findNextMove(board) {
     return new Promise((resolve) => {
       this.worker.addEventListener('message', e => {
-        const result = []
         // console.debug(`gameTree`, e.data.tree)
-        for (const { x, y, flippables } of e.data.result) {
-          const flippable = new Flippable(board, x, y);
-          flippable.add(...flippables);
-          result.push(flippable);
-        }
-        resolve(result);
+        resolve(e.data.nextMoves);
       }, { once: true })
 
-      this.worker.postMessage({ board: board.serialize(), level });
+      this.worker.postMessage({ board: board.serialize(), level: this.level });
     })
   }
 }
@@ -516,17 +512,15 @@ export class BruteForceEngine {
   
   searchCount = 0
 
-  async findNextMove(board, level, root = {}) {
+  constructor(level) {
+    this.level = level
+  }
+
+  async findNextMove(board, root = {}) {
     this.searchCount = 0;
-    let maxDepth = level
-    // adaptively adjust the search depth
-    if (board.totalScore < 8) {
-      maxDepth -= 1;
-    } else if (board.totalScore >= 16) {
-      maxDepth += 1;
-    }
+    let maxDepth = this.level
     // console.time('analyze')
-    const candidates = await this.#findRecursive(board, maxDepth, root)
+    const candidates = await this.#findRecursive(board, Math.max(1, maxDepth), root)
     // console.timeEnd('analyze')
     // console.debug(`searchCount`, searchCount`)
     // console.debug(`root`, root)
@@ -537,7 +531,7 @@ export class BruteForceEngine {
       .filter(f => f.score === best)
       .sort(() => Math.random() - 0.5)
       .map(f => {
-        return f.flippable
+        return [f.flippable.x, f.flippable.y]
       })
   }
 
@@ -597,13 +591,66 @@ export class BruteForceEngine {
   }
 }
 
+export class MonteCarloTreeSearchEngine {
+
+  constructor(apiUrl, level) {
+    this.apiUrl = apiUrl
+    this.level = level
+  }
+
+  async findNextMove(board) {
+    const query = new URLSearchParams({
+      player: board.nextPiece == 'b' ? 'BLACK' : 'WHITE',
+      board: this.toHex(board),
+      passes: board.passCount,
+      level: this.level,
+    })
+
+    // console.debug(`>>> query: ${query.toString()}`);
+    const res = await fetch(`${this.apiUrl}/find-next-move?${query.toString()}`)
+
+    if (!res.ok) {
+      const { error } = await res.json()
+      throw new Error(`MonteCarloTreeSearchEngine: ${error}`)
+    }
+
+    const { move, passes } = await res.json()
+    // console.debug(`<<< move: ${move} passes: ${passes}`)
+
+    if (passes > board.passCount) {
+      return []
+    }
+
+    return [move]
+  }
+
+  toHex(board) {
+    let uintSlots = new Uint32Array(4)
+    for (let y = 0; y < board.height; y++) {
+      let slot = uintSlots[y >> 1]
+      for (let x = 0; x < board.width; x++) {
+        const piece = board.grid[y][x];
+        let cell = 0
+        if (piece == 'b') {
+          cell = 1
+        }
+        if (piece == 'w') {
+          cell = 2
+        }
+        slot = (slot << 2) | cell
+      }
+      uintSlots[y >> 1] = slot
+    }
+    return [...uintSlots].map(n => n.toString(16)).join('-')
+  }
+}
+
 export class Bot extends EventEmitter {
-  constructor(board, piece, engine, level) {
+  constructor(board, piece, engine) {
     super();
     this.board = board;
     this.piece = piece;
     this.engine = engine;
-    this.level = level;
     this.timer = 0;
     this.sleeping = false;
   }
@@ -626,12 +673,13 @@ export class Bot extends EventEmitter {
   _play() {
     this.say(`thinking...`);
     this.emit('thinkstart');
-    this.engine.findNextMove(this.board, this.level).then(flippables => {
+    this.engine.findNextMove(this.board).then(nextMoves => {
       this.emit('thinkend');
-      if (flippables.length > 0) {
-        const { x, y } = flippables[0];
+      if (nextMoves.length > 0) {
+        const [x, y] = nextMoves[0];
         this.say(`playing (%d, %d)`, x, y);
-        flippables[0].flip();
+        const flippable  = this.board.getFlippable(x, y);
+        flippable.flip();
       } else {
         this.say(`pass :(`);
         this.board.pass();

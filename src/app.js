@@ -2,14 +2,15 @@ import * as othello from './othello.js';
 
 const { $, $$ } = othello;
 
-const WHITE_BOT_LEVEL = 4;
-const BLACK_BOT_LEVEL = 4;
+const WHITE_LEVEL = 4;
+const BLACK_LEVEL = 4;
+
+const blackEngine = new othello.BruteForceEngineWorker('./worker.min.js?v=17a9ed45', BLACK_LEVEL);
+const whiteEngine = new othello.MonteCarloTreeSearchEngine('https://othello-mcts.ring0.hk', WHITE_LEVEL);
 
 export const board = new othello.Board(sessionStorage.getItem('board'));
-
-const engine = new othello.BruteForceEngineWorker('./worker.min.js?v=d5b30790');
-export const whiteBot = new othello.Bot(board, 'w', engine, WHITE_BOT_LEVEL, false);
-export const blackBot = new othello.Bot(board, 'b', engine, BLACK_BOT_LEVEL, false);
+export const blackBot = new othello.Bot(board, 'b', blackEngine);
+export const whiteBot = new othello.Bot(board, 'w', whiteEngine);
 
 export async function replay(gameId = 0, maxTurns = 99) {
   if (maxTurns < 2) {
@@ -143,11 +144,12 @@ function main() {
   })
 
   $('#controls .pass').addEventListener('click', e => {
-    engine.findNextMove(board, 2).then(flippables => {
-      if (flippables.length > 0) {
+    blackEngine.findNextMove(board).then(nextMoves => {
+      if (nextMoves.length > 0) {
         alert(`Don't pass yet! You can flip here!`)
+        const [x, y] = nextMoves[0];
         view.clearUI();
-        view.previewFlippable(flippables[0])
+        view.previewFlippable(board.getFlippable(x, y))
       } else {
         board.pass();
       }
